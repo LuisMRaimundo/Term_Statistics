@@ -651,6 +651,22 @@ logDice rescales to a familiar collocational range (Rychlý). Compare terms **wi
 | `--nulo-polaridade` | `banda` / `lexico` |
 | `--relacao` | Optional subset of relations |
 
+### `textura_apa7.py` (optional, before phase 3)
+
+Standalone script: follow each work’s hyperlink/DOI (Crossref / HTML meta / local PDF), build APA 7 references, write a catalogue for `--refs`. Does **not** replace PDF page localisation.
+
+```bash
+python textura_apa7.py --xlsx UNIFORME_near.xlsx --saida refs_apa7.xlsx
+python textura_apendice.py --xlsx UNIFORME_near.xlsx --refs refs_apa7.xlsx
+```
+
+| Flag | Role |
+|---|---|
+| `--xlsx` | Concordance Excel (`8_Concordancia`) |
+| `--saida` | APA7 catalogue (xlsx/csv) |
+| `--escrever-xlsx` | Also fill `fonte_apa` on the input Excel |
+| `--limite` | Process only first N works (smoke test) |
+
 ### `textura_apendice.py`
 
 | Flag | Role |

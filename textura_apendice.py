@@ -20,6 +20,11 @@ Uso:
     python textura_apendice.py --xlsx resultado_analise.xlsx \\
         --refs obras_subjacentes.csv --saida Apendice_Concordancia.docx
 
+Títulos APA corruptos (fallback do filename)? Gere antes o catálogo:
+    python textura_apa7.py --xlsx resultado_near.xlsx --saida refs_apa7.xlsx
+    python textura_apendice.py --xlsx resultado_near.xlsx --refs refs_apa7.xlsx
+(A localização de páginas no PDF é independente — ``--paginas-pdf``.)
+
 Gera sempre dois ficheiros:
   • Apendice_Concordancia.docx          — tipografia de publicação
   • Apendice_Concordancia_links.docx    — igual, com hiperligações na Fonte
@@ -713,6 +718,11 @@ def resolver_fonte(row: pd.Series, refs: dict[str, str],
             base = _fonte_fallback(_primeira_col(row, COLS_CAMINHO))
 
     base = base.rstrip()
+    # APA 7: never add a period after a DOI/URL terminal element.
+    if re.search(r"https?://(?:dx\.)?doi\.org/\S+$", base, re.I):
+        return base
+    if re.search(r"https?://\S+$", base, re.I):
+        return base
     if base.endswith("."):
         return base
     return base + "."
