@@ -32,6 +32,8 @@ if str(AQUI) not in sys.path:
 MOTOR = AQUI / "textura_search.py"
 MOTOR_ANALISE = AQUI / "textura_analise.py"
 MOTOR_APENDICE = AQUI / "textura_apendice.py"
+MOTOR_DOCTOR = AQUI / "textura_doctor.py"
+MOTOR_APA7 = AQUI / "textura_apa7.py"
 
 try:
     from textura_search import DEFAULT_SAIDA
@@ -227,6 +229,22 @@ class App(tk.Tk):
                  "3. Analisar → estatística. "
                  "4. Apêndice DOCX → concordância legível (fase 3)."
         ).pack(anchor="w", pady=(6, 0))
+
+        # —— utilitários aditivos (não alteram o fluxo 1–4) ——
+        util = ttk.Frame(root)
+        util.pack(fill="x", pady=(8, 0))
+        ttk.Button(
+            util, text="Doctor (checklist…)", style="Toolbutton",
+            command=self._doctor_excel,
+        ).pack(side="left")
+        ttk.Button(
+            util, text="APA7 catálogo…", style="Toolbutton",
+            command=self._apa7_catalogo,
+        ).pack(side="left", padx=(8, 0))
+        ttk.Label(
+            util, style="Hint.TLabel",
+            text="opcional · antes da análise / do apêndice",
+        ).pack(side="left", padx=(10, 0))
 
         # —— legendas (recolhido, mas bem visível) ——
         self.leg_aberto = tk.BooleanVar(value=False)
@@ -704,6 +722,52 @@ class App(tk.Tk):
             except Exception:
                 pass
         return ""
+
+    def _doctor_excel(self):
+        """Checklist pré-análise (avisos; não altera o ficheiro)."""
+        if self.proc is not None:
+            return
+        if not MOTOR_DOCTOR.exists():
+            messagebox.showerror("Erro", f"Motor em falta:\n{MOTOR_DOCTOR}")
+            return
+        xin = filedialog.askopenfilename(
+            title="Excel revisto (8_Concordancia)",
+            filetypes=[("Excel", "*.xlsx"), ("Todos", "*.*")],
+        )
+        if not xin:
+            return
+        cmd = [sys.executable, str(MOTOR_DOCTOR), "--xlsx", xin]
+        self._log("\n" + "-" * 60)
+        self._log(" ".join(f'"{a}"' if " " in a else a for a in cmd))
+        self._arranca_cmd(cmd, "Doctor…")
+
+    def _apa7_catalogo(self):
+        """Gera catálogo APA7 opcional para --refs no apêndice."""
+        if self.proc is not None:
+            return
+        if not MOTOR_APA7.exists():
+            messagebox.showerror("Erro", f"Motor em falta:\n{MOTOR_APA7}")
+            return
+        xin = filedialog.askopenfilename(
+            title="Excel com fontes (NEAR / revisto)",
+            filetypes=[("Excel", "*.xlsx"), ("Todos", "*.*")],
+        )
+        if not xin:
+            return
+        xout = filedialog.asksaveasfilename(
+            title="Guardar catálogo APA7",
+            defaultextension=".xlsx",
+            initialfile=Path(xin).stem + "_refs_apa7.xlsx",
+            filetypes=[("Excel", "*.xlsx"), ("CSV", "*.csv"), ("Todos", "*.*")],
+        )
+        if not xout:
+            return
+        cmd = [sys.executable, str(MOTOR_APA7),
+               "--xlsx", xin, "--saida", xout]
+        self.v_saida.set(xout)
+        self._log("\n" + "-" * 60)
+        self._log(" ".join(f'"{a}"' if " " in a else a for a in cmd))
+        self._arranca_cmd(cmd, "APA7…")
 
     def _apendice_docx(self):
         """Fase 3 — projecção legível (DOCX) das atribuições nucleares."""

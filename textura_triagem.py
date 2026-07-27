@@ -205,7 +205,7 @@ def checklist_revisao(df: pd.DataFrame) -> dict[str, Any]:
             avisos.append(f"{por} nucleares com dominio=por_rever")
 
     if "revisto_por_humano" in df.columns:
-        marc = int(~df["revisto_por_humano"].map(_empty))
+        marc = int((~df["revisto_por_humano"].map(_empty)).sum())
         if marc == 0:
             avisos.append("nenhuma linha com revisto_por_humano (GUIA fase 1)")
         elif marc < n:

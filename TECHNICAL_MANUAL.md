@@ -65,11 +65,14 @@ textura_gui.py          ← desktop orchestration (optional)
 Supporting modules
     textura_lexico.py    lexical field, polarity, axes, doc_id
     textura_query.py     boolean query parser
-    textura_triagem.py   domain triage / OCR noise
+    textura_triagem.py   domain triage / OCR noise / false friends / checklist
+    textura_doctor.py    pre-analysis revision checklist (CLI)
+    textura_apa7.py      optional APA 7 catalogue for appendix --refs
     textura_stats.py     logistic regression, BF, Hardie LR, CA, profiles
     textura_plots.py     frequency, clouds, sankey
     textura_legendas.py  plot title JSON
     textura_validacao.py validation helpers
+    dominios.tsv         default path→domain rules (auto-loaded by near if present)
 ```
 
 **Typical data path**
@@ -641,6 +644,9 @@ logDice rescales to a familiar collocational range (Rychlý). Compare terms **wi
 | `--col-no` `--col-ctx` `--col-src` | Column numbers (defaults 6, 15, 12) |
 | `--saida` | Output `*_near.xlsx` |
 | `--so-extrair` / `--fases 1` | Extraction only (default workflow) |
+| `--dominios` | Optional TSV (default: project `dominios.tsv` if present) |
+| `--dominio-omissao` | Unmatched path domain (default `musicologia`) |
+| `--sem-falsos-amigos` | Skip automatic false-friend demotion |
 
 ### `textura_analise.py`
 
@@ -650,6 +656,14 @@ logDice rescales to a familiar collocational range (Rychlý). Compare terms **wi
 | `--desduplicacao` | `nenhuma` / `contexto` / `candidatos` / `obra_termo` / `ocorrencia` / `ocorrencia_termo` |
 | `--nulo-polaridade` | `banda` / `lexico` |
 | `--relacao` | Optional subset of relations |
+| `--estrito` | Fail if revision checklist reports errors |
+
+### `textura_doctor.py`
+
+```bash
+python textura_doctor.py --xlsx UNIFORME_near_revisto_LR.xlsx
+python textura_doctor.py --xlsx ... --estrito   # exit 1 on errors
+```
 
 ### `textura_apa7.py` (optional, before phase 3)
 
@@ -720,10 +734,12 @@ python textura_apendice.py --xlsx UNIFORME_near.xlsx --refs refs_apa7.xlsx
 | `textura_apendice.py` | DOCX projection, excerpt cleanup, PDF pages |
 | `textura_lexico.py` | Field loading, polarity, axes, `doc_id` |
 | `textura_stats.py` | LR, BF, permutations, logistic, CA, profiles |
-| `textura_triagem.py` | Domain filters, OCR noise |
+| `textura_triagem.py` | Domain filters, OCR noise, false friends, checklist |
+| `textura_doctor.py` | Pre-analysis checklist CLI |
+| `textura_apa7.py` | APA 7 catalogue for `--refs` |
 | `textura_plots.py` | Visualisations |
-| `textura_gui.py` | UI shell |
-| `tests/` | Tokenisation, syntax, IDs, excerpt formatting |
+| `textura_gui.py` | UI shell (+ Doctor / APA7 utilities) |
+| `tests/` | Tokenisation, syntax, IDs, excerpt formatting, triage R95 |
 
 ---
 
