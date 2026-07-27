@@ -89,8 +89,8 @@ def permutacao_diferenca(grupo_a, grupo_b, n_rep=10000, semente=20260724):
 # 2. REGRESSÃO LOGÍSTICA
 # ---------------------------------------------------------------------------
 
-def _irls(X, y, max_iter=60, tol=1e-9):
-    """Máxima verosimilhança por mínimos quadrados reponderados."""
+def _irls(X, y, max_iter=60, tol=1e-9, firth: bool = False):
+    """Máxima verosimilhança por IRLS; opcionalmente penalização de Firth."""
     n, p = X.shape
     beta = np.zeros(p)
     for _ in range(max_iter):
@@ -99,10 +99,25 @@ def _irls(X, y, max_iter=60, tol=1e-9):
         w = np.clip(mu * (1 - mu), 1e-9, None)
         z = eta + (y - mu) / w
         XtW = X.T * w
+        Hinv = None
         try:
-            novo = np.linalg.solve(XtW @ X, XtW @ z)
+            XtWX = XtW @ X
+            novo = np.linalg.solve(XtWX, XtW @ z)
+            if firth:
+                Hinv = np.linalg.pinv(XtWX)
         except np.linalg.LinAlgError:
-            novo = np.linalg.lstsq(XtW @ X, XtW @ z, rcond=None)[0]
+            XtWX = XtW @ X
+            novo = np.linalg.lstsq(XtWX, XtW @ z, rcond=None)[0]
+            if firth:
+                Hinv = np.linalg.pinv(XtWX)
+        if firth and Hinv is not None:
+            # score de Firth: 0.5 * diag(H) * X  (aproximação)
+            h = np.clip(np.sum((X @ Hinv) * X, axis=1), 0, 1)
+            score = X.T @ (y - mu + h * (0.5 - mu))
+            try:
+                novo = beta + np.linalg.solve(XtWX, score)
+            except np.linalg.LinAlgError:
+                novo = beta + np.linalg.lstsq(XtWX, score, rcond=None)[0]
         if np.max(np.abs(novo - beta)) < tol:
             beta = novo
             break
@@ -111,18 +126,36 @@ def _irls(X, y, max_iter=60, tol=1e-9):
     mu = 1.0 / (1.0 + np.exp(-np.clip(eta, -35, 35)))
     w = np.clip(mu * (1 - mu), 1e-9, None)
     cov = np.linalg.pinv((X.T * w) @ X)
-    return beta, np.sqrt(np.diag(cov)), mu
+    return beta, cov, mu
+
+
+def _se_cluster_cr1(X, y, mu, beta, clusters) -> np.ndarray:
+    """Erros-padrão sanduíche CR1 (agrupados por obra)."""
+    clusters = np.asarray(clusters)
+    n, p = X.shape
+    meat = np.zeros((p, p))
+    g_unique = pd.unique(clusters)
+    G = len(g_unique)
+    for g in g_unique:
+        m = clusters == g
+        Xg = X[m]
+        ug = (y[m] - mu[m]).reshape(-1, 1)
+        Sg = Xg.T @ ug
+        meat += Sg @ Sg.T
+    bread = np.linalg.pinv((X.T * np.clip(mu * (1 - mu), 1e-9, None)) @ X)
+    # correcção CR1
+    fator = (G / max(G - 1, 1)) * ((n - 1) / max(n - p, 1))
+    cov = fator * (bread @ meat @ bread)
+    return np.sqrt(np.clip(np.diag(cov), 0, None))
 
 
 def regressao_logistica(df, alvo="polaridade", positivo="estabilidade",
-                        preditores=("relacao", "lado", "distancia")):
-    """Modela a probabilidade do pólo de estabilidade a partir dos preditores.
-
-    Substitui a bateria de χ² independentes por um modelo único, no qual
-    o efeito de cada preditor é estimado com os restantes controlados —
-    prática corrente na linguística de corpus quantitativa desde Baayen
-    (2008) e Gries (2013). Devolve razões de possibilidades com intervalo
-    de confiança de 95% e valor de p de Wald.
+                        preditores=("relacao", "lado", "distancia"),
+                        cluster: str | None = None,
+                        firth_se_separacao: bool = True,
+                        min_nivel: int = 10):
+    """Regressão logística com referência = categoria mais frequente,
+    agrupamento de níveis raros, Firth se separação, SE cluster CR1.
     """
     d = df.dropna(subset=[alvo]).copy()
     preditores = [p for p in preditores if p in d.columns]
@@ -133,6 +166,7 @@ def regressao_logistica(df, alvo="polaridade", positivo="estabilidade",
     if y.min() == y.max():
         return pd.DataFrame(), {"aviso": "resposta constante"}
 
+    niveis_agrupados = []
     partes, nomes = [np.ones((len(d), 1))], ["(intercepção)"]
     for p in preditores:
         if pd.api.types.is_numeric_dtype(d[p]):
@@ -140,40 +174,69 @@ def regressao_logistica(df, alvo="polaridade", positivo="estabilidade",
             partes.append(((v - v.mean()) / (v.std() or 1)).reshape(-1, 1))
             nomes.append(f"{p} (padronizada)")
         else:
-            cats = sorted(d[p].dropna().unique())
-            ref = cats[0]
-            for c in cats[1:]:
-                partes.append((d[p] == c).astype(float).values.reshape(-1, 1))
+            vc = d[p].astype(str).value_counts()
+            raros = set(vc[vc < min_nivel].index)
+            serie = d[p].astype(str).where(~d[p].astype(str).isin(raros),
+                                           other="outras")
+            if raros:
+                niveis_agrupados.extend(f"{p}:{r}" for r in sorted(raros))
+            # referência = categoria mais frequente (nao alfabetica)
+            ref = serie.value_counts().index[0]
+            cats = [c for c in serie.value_counts().index if c != ref]
+            for c in cats:
+                partes.append((serie == c).astype(float).values.reshape(-1, 1))
                 nomes.append(f"{p}: {c} vs {ref}")
     X = np.hstack(partes)
 
-    beta, se, mu = _irls(X, y)
-    z = np.divide(beta, se, out=np.zeros_like(beta), where=se > 0)
-    p = 2 * (1 - stats.norm.cdf(np.abs(z)))
+    beta, cov, mu = _irls(X, y, firth=False)
+    se = np.sqrt(np.clip(np.diag(cov), 0, None))
+    usou_firth = False
+    if firth_se_separacao and (
+            (np.abs(beta) > 10).any() or (se > 100).any()):
+        beta, cov, mu = _irls(X, y, firth=True)
+        se = np.sqrt(np.clip(np.diag(cov), 0, None))
+        usou_firth = True
 
+    se_tipo = "modelo"
+    if cluster and cluster in d.columns:
+        se = _se_cluster_cr1(X, y, mu, beta, d[cluster].astype(str).values)
+        se_tipo = f"cluster CR1 ({cluster})"
+
+    z = np.divide(beta, se, out=np.zeros_like(beta), where=se > 0)
+    pvals = 2 * (1 - stats.norm.cdf(np.abs(z)))
+
+    lo = np.clip(beta - 1.96 * se, -50, 50)
+    hi = np.clip(beta + 1.96 * se, -50, 50)
     tab = pd.DataFrame({
         "termo": nomes,
         "coef_log_odds": np.round(beta, 4),
         "erro_padrao": np.round(se, 4),
-        "razao_possib": np.round(np.exp(beta), 4),
-        "IC95_inf": np.round(np.exp(beta - 1.96 * se), 4),
-        "IC95_sup": np.round(np.exp(beta + 1.96 * se), 4),
+        "razao_possib": np.round(np.exp(np.clip(beta, -50, 50)), 4),
+        "IC95_inf": np.round(np.exp(lo), 4),
+        "IC95_sup": np.round(np.exp(hi), 4),
         "z": np.round(z, 3),
-        "p": [f"{v:.4g}" for v in p],
+        "p": [f"{v:.4g}" for v in pvals],
     })
 
     ll = float(np.sum(y * np.log(np.clip(mu, 1e-12, 1)) +
                       (1 - y) * np.log(np.clip(1 - mu, 1e-12, 1))))
     pbar = y.mean()
-    ll0 = float(len(y) * (pbar * math.log(pbar) + (1 - pbar) * math.log(1 - pbar)))
+    ll0 = float(len(y) * (pbar * math.log(max(pbar, 1e-12))
+                          + (1 - pbar) * math.log(max(1 - pbar, 1e-12))))
     ajuste = {
         "n": len(y),
         "log-verosimilhança": round(ll, 3),
         "R² de McFadden": round(1 - ll / ll0, 4) if ll0 else float("nan"),
         "AIC": round(-2 * ll + 2 * X.shape[1], 3),
-        "exactidão de classificação": round(float(((mu > .5) == (y > .5)).mean()), 4),
+        "exactidão de classificação": round(
+            float(((mu > .5) == (y > .5)).mean()), 4),
         "taxa de base": round(float(max(pbar, 1 - pbar)), 4),
+        "erros_padrao": se_tipo,
+        "firth": "sim" if usou_firth else "nao",
+        "niveis_agrupados": niveis_agrupados,
     }
+    if usou_firth:
+        ajuste["aviso"] = "Firth aplicado (separacao / coeficientes extremos)"
     return tab, ajuste
 
 
@@ -230,6 +293,18 @@ def analise_correspondencias(tabela: pd.DataFrame, destino=None):
 # 4. CLASSIFICAÇÃO HIERÁRQUICA DOS COLOCADOS
 # ---------------------------------------------------------------------------
 
+def _negado_como_fraccao(v) -> float:
+    """Converte negado (bool legado ou directo/indirecto/nao) em 0/1."""
+    if v is True or v == 1:
+        return 1.0
+    if v is False or v == 0 or v is None:
+        return 0.0
+    s = str(v).strip().lower()
+    if s in {"directo", "true", "1", "sim"}:
+        return 1.0
+    return 0.0
+
+
 def perfis_e_dendrograma(res: pd.DataFrame, destino=None, min_ocorr=5):
     """Agrupa os tipos lexicais pelo seu perfil contextual.
 
@@ -249,9 +324,19 @@ def perfis_e_dendrograma(res: pd.DataFrame, destino=None, min_ocorr=5):
     perfil["prop_esquerda"] = d.groupby("termo_tipo")["lado"].apply(
         lambda s: (s == "esq").mean()).round(4)
     perfil["distancia_media"] = d.groupby("termo_tipo")["distancia"].mean().round(4)
-    perfil["prop_negado"] = d.groupby("termo_tipo")["negado"].mean().round(4)
-    perfil["prop_modalizado"] = d.groupby("termo_tipo")["modalizado"].mean().round(4)
-    col_rel = "relacao_dep" if "relacao_dep" in d.columns else "relacao"
+    # negado ∈ {directo, indirecto, nao} ou bool legado — so «directo»/True conta
+    neg_num = d["negado"].map(_negado_como_fraccao)
+    perfil["prop_negado"] = neg_num.groupby(d["termo_tipo"]).mean().round(4)
+    mod_num = d["modalizado"].map(
+        lambda v: 1.0 if v is True or v == 1 or str(v).lower() in {
+            "true", "1"} else 0.0)
+    perfil["prop_modalizado"] = mod_num.groupby(d["termo_tipo"]).mean().round(4)
+    if "relacao_sintactica" in d.columns:
+        col_rel = "relacao_sintactica"
+    elif "relacao_dep" in d.columns:
+        col_rel = "relacao_dep"
+    else:
+        col_rel = "relacao"
     prop_rel = (pd.crosstab(d["termo_tipo"], d[col_rel], normalize="index")
                 .round(4).add_prefix("rel_"))
     perfil = perfil.join(prop_rel).fillna(0)
