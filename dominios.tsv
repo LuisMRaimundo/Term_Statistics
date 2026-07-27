@@ -1,0 +1,9 @@
+# path_regex	dominio
+# Default corpus rules (additive). Unmatched paths stay por_rever unless
+# textura_near/triagem uses --dominio-omissao musicologia.
+(?i)todos os textos	musicologia
+(?i)CLASSES TEXTURAIS	musicologia
+(?i)\\UNIFORM\\	musicologia
+(?i)mir[_-]?visao|computational music|ismir|aes[_\s-]	mir_visao
+(?i)phys(ics|ical)|elastic constants|solid.?state	ciencias_naturais
+(?i)\\math	matematica

@@ -152,7 +152,7 @@ def polaridade_nulo_banda(res_nuc: pd.DataFrame, hits_banda: dict | None,
     return tot_e / tot
 
 
-def validar_fase1(xlsx: Path) -> dict:
+def validar_fase1(xlsx: Path, *, estrito: bool = False) -> dict:
     with pd.ExcelFile(xlsx) as xl:
         sheets = list(xl.sheet_names)
         if "0_Instrucoes" not in sheets:
@@ -179,7 +179,34 @@ def validar_fase1(xlsx: Path) -> dict:
             raise SystemExit(
                 f"Valor invalido em relacao_sintactica linha {i+2}: {rel!r}. "
                 f"Admissiveis: {RELACOES_VALIDAS}")
-    return {"conc": conc, "meta": meta, "sheets": sheets}
+
+    # R95 — checklist de revisão (avisos; erros só com --estrito)
+    checklist = None
+    try:
+        import textura_triagem as ttri
+        checklist = ttri.checklist_revisao(conc)
+        for a in checklist.get("avisos") or []:
+            print(f"  [revisão] aviso: {a}", flush=True)
+        for e in checklist.get("erros") or []:
+            print(f"  [revisão] ERRO: {e}", flush=True)
+        print(
+            f"  [revisão] checklist score={checklist.get('score')} "
+            f"nuclear={checklist.get('n_nuclear')}/{checklist.get('n')}",
+            flush=True,
+        )
+        if estrito and not checklist.get("ok"):
+            raise SystemExit(
+                "Checklist de revisão falhou (--estrito). "
+                "Corrija 8_Concordancia ou use textura_doctor.py."
+            )
+    except SystemExit:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        print(f"  [revisão] checklist indisponível: {exc}", flush=True)
+
+    return {
+        "conc": conc, "meta": meta, "sheets": sheets, "checklist": checklist,
+    }
 
 
 def comparar_revisao(conc: pd.DataFrame, meta: dict) -> dict:
@@ -258,10 +285,11 @@ def analisar(xlsx: Path, saida: Path | None = None,
              cooc_unidade: str = "obra",
              desduplicacao: str = "nenhuma",
              legendas: Path | None = None,
-             relacoes: list[str] | None = None) -> int:
+             relacoes: list[str] | None = None,
+             estrito: bool = False) -> int:
     _cfg_consola()
     saida = saida or xlsx
-    info = validar_fase1(xlsx)
+    info = validar_fase1(xlsx, estrito=estrito)
     conc = info["conc"]
     meta = info["meta"]
     rev = comparar_revisao(conc, meta)
@@ -787,6 +815,12 @@ def main() -> int:
                     help="reservado (ainda nao aplicado nesta build)")
     ap.add_argument("--kappa-cego", type=Path, default=None,
                     help="reservado (ainda nao aplicado nesta build)")
+    ap.add_argument(
+        "--estrito",
+        action="store_true",
+        help="falhar se o checklist de revisão tiver erros "
+             "(nuclear≠relação, 0 nucleares, …)",
+    )
     args = ap.parse_args()
     if args.plano_a_priori:
         print(f"AVISO: --plano-a-priori ignorado nesta build: "
@@ -802,6 +836,7 @@ def main() -> int:
         desduplicacao=args.desduplicacao,
         legendas=args.legendas,
         relacoes=rels or None,
+        estrito=args.estrito,
     )
 
 

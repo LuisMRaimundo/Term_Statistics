@@ -1550,9 +1550,22 @@ def main() -> int:
     ap.add_argument("--inverter-polaridade-negada", action="store_true",
                     help="inverter polaridade quando negado=True (omissão: não)")
     ap.add_argument("--dominios", type=Path, default=None,
-                    help="TSV padrao_ficheiro\\tdominio para triagem documental")
+                    help="TSV padrao_ficheiro\\tdominio para triagem documental "
+                         "(omissão: dominios.tsv junto do projecto, se existir)")
     ap.add_argument("--incluir-dominio", action="append", default=None,
                     help="domínio a readmitir (repetível); omissão: só musicologia")
+    ap.add_argument(
+        "--dominio-omissao",
+        default="musicologia",
+        help="domínio quando o TSV não casa (omissão: musicologia; "
+             "vazio '' = manter por_rever)",
+    )
+    ap.add_argument(
+        "--sem-falsos-amigos",
+        action="store_true",
+        help="não aplicar exclusão automática de falsos amigos "
+             "(continuo/continuum/continue…)",
+    )
     ap.add_argument("--saida", type=Path, default=Path("resultado_near.xlsx"))
     ap.add_argument("--so-extrair", action="store_true", default=True,
                     help="(omissao) so extrai para revisao; sem estatistica")
@@ -1787,10 +1800,21 @@ def main() -> int:
     n_bruto = len(res)
     por_rever = pd.DataFrame(columns=["caminho", "n_hits", "n_nucleares"])
     if ttri is not None:
-        regras = ttri.carregar_dominios(args.dominios)
+        dom_path = args.dominios
+        if dom_path is None:
+            cand = Path(__file__).resolve().parent / "dominios.tsv"
+            if cand.is_file():
+                dom_path = cand
+        regras = ttri.carregar_dominios(dom_path)
         incluir = set(args.incluir_dominio) if args.incluir_dominio else None
+        omis = (args.dominio_omissao or "").strip() or None
         res, _, por_rever = ttri.aplicar_triagem(
-            res, regras_dominio=regras, incluir_dominios=incluir)
+            res,
+            regras_dominio=regras,
+            incluir_dominios=incluir,
+            dominio_omissao=omis,
+            aplicar_amigos=not args.sem_falsos_amigos,
+        )
         for i, row in res.iterrows():
             toks = tokeniza(str(row["contexto"]))
             i_no = next((k for k, (_, o) in enumerate(toks)
