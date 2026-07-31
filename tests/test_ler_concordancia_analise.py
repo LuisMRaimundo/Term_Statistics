@@ -41,6 +41,27 @@ class LerConcordanciaAnaliseTests(unittest.TestCase):
             ana.write_bytes(b"x")
             self.assertEqual(ta._sugerir_entrada_revisao(ana), str(rev))
 
+    def test_sincronizar_hits(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "rev.xlsx"
+            conc = pd.DataFrame({
+                "hit_key": ["a", "b", "c"],
+                "nuclear": [True, True, False],
+                "relacao_sintactica": ["atributiva", "predicativa", "incidental"],
+                "canonical_term": ["complex", "mix", "blend"],
+            })
+            hits_old = conc.copy()
+            hits_old.loc[0, "nuclear"] = False  # desactualizado
+            with pd.ExcelWriter(path, engine="openpyxl") as xw:
+                conc.to_excel(xw, sheet_name="8_Concordancia", index=False)
+                hits_old.to_excel(xw, sheet_name="8_Concordancia_Hits", index=False)
+            out = ta.sincronizar_hits_com_concordancia(path)
+            self.assertTrue(out["ok"])
+            self.assertEqual(out["n_conc"], 2)
+            self.assertEqual(out["n_hits_antes"], 1)
+            hits = pd.read_excel(path, sheet_name="8_Concordancia_Hits")
+            self.assertEqual(ta._nuclear_true_count(hits["nuclear"]), 2)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -136,6 +136,48 @@ def _sugerir_entrada_revisao(xlsx: Path) -> str:
     return ""
 
 
+def _nuclear_true_count(serie: pd.Series) -> int:
+    return int(serie.map(
+        lambda v: v is True or str(v).lower() in {"true", "1", "sim"}
+    ).sum())
+
+
+def sincronizar_hits_com_concordancia(xlsx: Path) -> dict:
+    """Copia ``8_Concordancia`` → ``8_Concordancia_Hits`` (arquivo alinhado).
+
+    A revisão edita só Concordancia; Hits é espelho e pode ficar velha.
+    Devolve ``{ok, n_conc, n_hits_antes, n_hits_depois, mensagem}``.
+    """
+    xlsx = Path(xlsx)
+    with pd.ExcelFile(xlsx) as xl:
+        sheets = set(xl.sheet_names)
+    if "8_Concordancia" not in sheets:
+        return {"ok": False, "mensagem": "falta 8_Concordancia"}
+    conc = ler_folha_concordancia(xlsx, "8_Concordancia")
+    n_conc = _nuclear_true_count(conc["nuclear"]) if "nuclear" in conc.columns else 0
+    n_antes = None
+    if "8_Concordancia_Hits" in sheets:
+        hits = pd.read_excel(xlsx, sheet_name="8_Concordancia_Hits")
+        if "nuclear" in hits.columns:
+            n_antes = _nuclear_true_count(hits["nuclear"])
+    with pd.ExcelWriter(
+        xlsx, engine="openpyxl", mode="a", if_sheet_exists="replace",
+    ) as xw:
+        conc.to_excel(xw, sheet_name="8_Concordancia_Hits", index=False)
+    return {
+        "ok": True,
+        "n_conc": n_conc,
+        "n_hits_antes": n_antes,
+        "n_hits_depois": n_conc,
+        "mensagem": (
+            f"8_Concordancia_Hits ← 8_Concordancia "
+            f"(nuclear True: {n_antes} → {n_conc})"
+            if n_antes is not None else
+            f"8_Concordancia_Hits criada (nuclear True={n_conc})"
+        ),
+    }
+
+
 def cramers_v(tab: pd.DataFrame) -> float:
     if tab.size == 0 or min(tab.shape) < 2:
         return float("nan")
@@ -440,29 +482,26 @@ def analisar(xlsx: Path, saida: Path | None = None,
     avisos = []
     if avisos_pre:
         avisos.append(avisos_pre)
-    # Folha Hits desactualizada (utilizador editou só 8_Concordancia, ou só Hits)
+    # Folha Hits desactualizada → sincronizar espelho no Excel de revisão
     if "8_Concordancia_Hits" in info.get("sheets", []):
         try:
             hits_df = pd.read_excel(xlsx, sheet_name="8_Concordancia_Hits")
             if "nuclear" in hits_df.columns:
-                h_true = hits_df["nuclear"].map(
-                    lambda v: v is True or str(v).lower() in {"true", "1", "sim"}
-                ).sum()
-                if int(h_true) != int(n_nuc):
-                    avisos.append(
-                        f"8_Concordancia_Hits está desactualizada "
-                        f"(nuclear=True: Hits={int(h_true)} ≠ "
-                        f"Concordancia={n_nuc}). A análise usa só "
-                        f"8_Concordancia — edite essa folha, não Hits."
+                h_true = _nuclear_true_count(hits_df["nuclear"])
+                if h_true != int(n_nuc):
+                    sync = sincronizar_hits_com_concordancia(xlsx)
+                    msg = sync.get("mensagem") or (
+                        f"Hits sincronizada ({h_true} → {n_nuc})"
                     )
-                    print(
-                        f"  [aviso] 8_Concordancia_Hits desactualizada "
-                        f"(True={int(h_true)} vs Concordancia={n_nuc}). "
-                        f"Edite 8_Concordancia.",
-                        flush=True,
-                    )
-        except Exception:  # noqa: BLE001
-            pass
+                    print(f"  [sync] {msg}", flush=True)
+                    avisos.append(f"sincronizado: {msg}")
+                    # folha Hits no workbook de entrada já está alinhada
+                    info["sheets"] = list(pd.ExcelFile(xlsx).sheet_names)
+        except Exception as exc:  # noqa: BLE001
+            avisos.append(
+                f"8_Concordancia_Hits desactualizada e sync falhou: {exc}"
+            )
+            print(f"  [aviso] sync Hits falhou: {exc}", flush=True)
     if colinear_deterministica(nuc, "canonical_term", "eixo"):
         avisos.append(
             "BLOQUEADO: eixo e funcao deterministica de canonical_term "
