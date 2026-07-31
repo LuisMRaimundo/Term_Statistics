@@ -25,9 +25,9 @@ PADRAO = {
         "xlabel": "Ocorrências",
     },
     "formas": {
-        "titulo": "Termos associados",
-        "subtitulo": "Formas de superfície recuperadas pela consulta booleana",
-        "xlabel": "Ocorrências",
+        "titulo": "Frequência por termo canónico",
+        "subtitulo": "Hits nucleares em 8_Concordancia (sem desduplicar contexto)",
+        "xlabel": "Ocorrências (N_hits)",
     },
     "near": {
         "titulo": "Distribuição das distâncias NEAR",

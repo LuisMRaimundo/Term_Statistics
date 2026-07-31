@@ -716,16 +716,30 @@ def analisar(xlsx: Path, saida: Path | None = None,
     leg_nuvem = leg.get("nuvem") or {}
     leg_sankey = leg.get("sankey") or {}
     rodape = str(leg.get("rodape") or "")
+    # Gráficos usam *todas* as nucleares (N_hits), não o conjunto deduplicado
+    # (N_dedup). Os testes χ²/BF usam dedup — daí Resumo ter 1171 e 1156.
+    nota_n = (
+        f"N_hits={n_nuc}"
+        + (f" · N_dedup({modo_dedupe})={n_dedup}" if modo_dedupe != "nenhuma"
+           else "")
+    )
     g1 = base / "_g_freq_token.png"
     try:
+        tit_f = str(leg_formas.get("titulo")
+                    or "Frequência por termo canónico")
+        if f"N={n_nuc}" not in tit_f and "N_hits=" not in tit_f:
+            tit_f = f"{tit_f}  ({nota_n})"
+        sub_f = str(leg_formas.get("subtitulo") or "")
+        if "N_hits" not in sub_f and "N=" not in sub_f:
+            sub_f = (f"{sub_f} · {nota_n}".strip(" ·")
+                     if sub_f else nota_n)
         tplot.barras_horizontais(
             list(freq_tok["canonical_term"]),
             list(freq_tok["ocorrencias_token"]),
             g1,
-            titulo=str(leg_formas.get("titulo")
-                       or f"Frequencia de ocorrencia (nuclear)  N={n_nuc}"),
-            subtitulo=str(leg_formas.get("subtitulo") or ""),
-            xlabel=str(leg_formas.get("xlabel") or "Ocorrencias"),
+            titulo=tit_f,
+            subtitulo=sub_f,
+            xlabel=str(leg_formas.get("xlabel") or "Ocorrencias (N_hits)"),
             rodape=rodape,
             max_n=None,
         )
@@ -735,14 +749,17 @@ def analisar(xlsx: Path, saida: Path | None = None,
 
     g_nuvem = base / "_g_nuvem.png"
     try:
-        # variante ponderada por obras
+        # variante ponderada por obras (matched_form), ainda sobre nucleares
         freq_ob = (nuc.groupby("matched_form")[col_doc].nunique().to_dict())
+        tit_n = str(leg_nuvem.get("titulo") or "Nuvem de palavras")
+        sub_n = str(leg_nuvem.get("subtitulo")
+                    or "Tamanho ∝ nº de obras por forma de superfície")
+        if "N_hits" not in sub_n and "N=" not in sub_n:
+            sub_n = f"{sub_n} · {nota_n}".strip(" ·")
         tplot.nuvem_palavras(
             freq_ob, g_nuvem,
-            titulo=str(leg_nuvem.get("titulo")
-                       or "Nuvem ponderada por obras (nuclear)"),
-            subtitulo=str(leg_nuvem.get("subtitulo")
-                          or f"N_linhas={n_nuc}  unidade=obras por forma"),
+            titulo=tit_n,
+            subtitulo=sub_n,
             rodape=rodape)
         g_msgs.append(f"OK nuvem -> {g_nuvem.name}")
     except Exception as exc:
@@ -752,13 +769,16 @@ def analisar(xlsx: Path, saida: Path | None = None,
     g_sankey2 = base / "_g_sankey_termo_rel.html"
     try:
         p1 = tplot.pares_forma_obra(nuc)
-        tplot.sankey_html(
-            p1, g_sankey1,
-            titulo=str(leg_sankey.get("titulo")
-                       or f"matched_form -> obra (nuclear) N={n_nuc}"))
+        tit_s1 = str(leg_sankey.get("titulo")
+                     or "Sankey: forma → documento")
+        if "N=" not in tit_s1 and "N_hits=" not in tit_s1:
+            tit_s1 = f"{tit_s1}  ({nota_n})"
+        tplot.sankey_html(p1, g_sankey1, titulo=tit_s1)
         p2 = tplot.pares_termo_rel_pol(nuc)
-        tplot.sankey_html(p2, g_sankey2,
-                          titulo=f"termo -> relacao -> polaridade N={n_nuc}")
+        tplot.sankey_html(
+            p2, g_sankey2,
+            titulo=f"termo → relação → polaridade  ({nota_n})",
+        )
         g_msgs.append("OK sankey HTML")
     except Exception as exc:
         g_msgs.append(f"FALHA sankey: {exc}")
