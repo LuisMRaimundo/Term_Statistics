@@ -8,3 +8,5 @@ venv/
 *.log
 .DS_Store
 Thumbs.db
+# Preferências locais da GUI (títulos dos gráficos)
+legendas_defeito.json

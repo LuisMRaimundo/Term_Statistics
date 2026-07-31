@@ -42,21 +42,31 @@ except Exception:  # noqa: BLE001
     DEFAULT_SAIDA = Path(r"C:\Users\lmr20\Desktop\EXCEL_list") / "resultado_pesquisa.xlsx"
 
 try:
-    from textura_legendas import PADRAO as LEG_PADRAO
+    from textura_legendas import (
+        PADRAO as LEG_PADRAO,
+        carregar_defeito_utilizador,
+        guardar_defeito_utilizador,
+    )
 except Exception:  # noqa: BLE001
     LEG_PADRAO = {
         "rodape": "TEXTURA  ·  pesquisa bibliográfica de termos",
-        "sankey": {"titulo": "Sankey: formas → documentos", "subtitulo": "",
-                   "eixo_esq": "Formas casadas", "eixo_dir": "Documentos"},
-        "nuvem": {"titulo": "Nuvem de formas", "subtitulo": ""},
-        "docs": {"titulo": "Dispersão por documentos", "subtitulo": "",
+        "sankey": {"titulo": "Sankey: termos → documentos", "subtitulo": "",
+                   "eixo_esq": "Termos", "eixo_dir": "Documentos"},
+        "nuvem": {"titulo": "Nuvem de palavras", "subtitulo": ""},
+        "docs": {"titulo": "Dispersão lexical pelos documentos", "subtitulo": "",
                  "xlabel": "Ocorrências"},
-        "formas": {"titulo": "Formas casadas", "subtitulo": "",
+        "formas": {"titulo": "Termos associados", "subtitulo": "",
                    "xlabel": "Ocorrências"},
         "near": {"titulo": "Distâncias NEAR", "subtitulo": "",
                  "xlabel": "Distância (tokens)", "ylabel": "Nº de pares",
                  "mediana": "Mediana", "media": "Média"},
     }
+
+    def carregar_defeito_utilizador():
+        return LEG_PADRAO
+
+    def guardar_defeito_utilizador(legendas):
+        return Path(".") / "legendas_defeito.json"
 
 EXEMPLOS = [
     "music* NEAR/4 texture*",
@@ -103,13 +113,20 @@ class App(tk.Tk):
         self.v_rel_adv = tk.BooleanVar(value=False)
         self.v_rel_indet = tk.BooleanVar(value=False)
 
-        # legendas editáveis
-        self.v_leg_rodape = tk.StringVar(value=LEG_PADRAO["rodape"])
+        # legendas editáveis — carrega defeitos do utilizador se existirem
+        try:
+            leg0 = carregar_defeito_utilizador()
+        except Exception:  # noqa: BLE001
+            leg0 = LEG_PADRAO
+        self.v_leg_rodape = tk.StringVar(
+            value=str(leg0.get("rodape") or LEG_PADRAO["rodape"])
+        )
         self.v_leg = {}
         for chave in ("sankey", "nuvem", "docs", "formas", "near"):
+            base = dict(LEG_PADRAO.get(chave) or {})
+            base.update(leg0.get(chave) or {})
             self.v_leg[chave] = {
-                k: tk.StringVar(value=str(v))
-                for k, v in LEG_PADRAO[chave].items()
+                k: tk.StringVar(value=str(v)) for k, v in base.items()
             }
 
         self._estilo()
@@ -266,9 +283,16 @@ class App(tk.Tk):
             row=row, column=0, sticky="w", padx=4, pady=2)
         ttk.Entry(self.frm_leg, textvariable=self.v_leg_rodape).grid(
             row=row, column=1, columnspan=2, sticky="ew", padx=4, pady=2)
-        ttk.Button(self.frm_leg, text="Restaurar PT", style="Toolbutton",
-                   command=self._restaura_legendas).grid(
-            row=row, column=3, sticky="e", padx=4, pady=2)
+        btns_leg = ttk.Frame(self.frm_leg)
+        btns_leg.grid(row=row, column=3, sticky="e", padx=4, pady=2)
+        ttk.Button(
+            btns_leg, text="Guardar como defeito", style="Toolbutton",
+            command=self._guarda_legendas_defeito,
+        ).pack(side="right")
+        ttk.Button(
+            btns_leg, text="Restaurar PT", style="Toolbutton",
+            command=self._restaura_legendas,
+        ).pack(side="right", padx=(0, 6))
         row += 1
         for chave, campo, defeito in (
             ("docs", "xlabel", "Ocorrências"),
@@ -390,11 +414,34 @@ class App(tk.Tk):
                     self.v_leg.setdefault(chave, {})[k] = tk.StringVar()
                 self.v_leg[chave][k].set(str(v))
 
+    def _guarda_legendas_defeito(self) -> Path | None:
+        """Persiste as legendas actuais para a próxima sessão."""
+        try:
+            path = guardar_defeito_utilizador(self._serializa_legendas())
+            self._log(f"Legendas guardadas como defeito: {path}")
+            messagebox.showinfo(
+                "Legendas",
+                f"Defeitos guardados.\nNa próxima abertura da GUI "
+                f"estes títulos serão carregados automaticamente.\n\n{path}",
+            )
+            return path
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror("Legendas", str(exc))
+            return None
+
     def _serializa_legendas(self) -> dict:
         out = {"rodape": self.v_leg_rodape.get().strip()}
         for chave, campos in self.v_leg.items():
             out[chave] = {k: v.get().strip() for k, v in campos.items()}
         return out
+
+    def _persistir_legendas_silencioso(self) -> None:
+        """Auto-grava defeitos ao analisar/pesquisar (sem diálogo)."""
+        try:
+            path = guardar_defeito_utilizador(self._serializa_legendas())
+            self._log(f"Legendas (defeito) actualizadas: {path.name}")
+        except Exception as exc:  # noqa: BLE001
+            self._log(f"Aviso: não foi possível gravar legendas defeito: {exc}")
 
     # ------------------------------------------------------------------ colar
     def _define_consulta(self, texto: str) -> None:
@@ -504,6 +551,7 @@ class App(tk.Tk):
         leg_path.write_text(
             json.dumps(self._serializa_legendas(), ensure_ascii=False, indent=2),
             encoding="utf-8")
+        self._persistir_legendas_silencioso()
 
         cmd = [sys.executable, str(MOTOR),
                "--xlsx", xlsx,
@@ -708,6 +756,7 @@ class App(tk.Tk):
                 json.dumps(self._serializa_legendas(), ensure_ascii=False,
                            indent=2),
                 encoding="utf-8")
+            self._persistir_legendas_silencioso()
             cmd = [sys.executable, str(MOTOR_ANALISE),
                    "--xlsx", xin, "--saida", xout,
                    "--legendas", str(leg_path),

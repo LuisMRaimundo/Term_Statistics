@@ -10,13 +10,13 @@ from pathlib import Path
 PADRAO = {
     "rodape": "TEXTURA  ·  pesquisa bibliográfica de termos",
     "sankey": {
-        "titulo": "Sankey: formas casadas → documentos",
+        "titulo": "Sankey: termos → documentos",
         "subtitulo": "Largura da faixa = nº de ocorrências (estilo ATLAS.ti)",
-        "eixo_esq": "Formas casadas",
+        "eixo_esq": "Termos",
         "eixo_dir": "Documentos",
     },
     "nuvem": {
-        "titulo": "Nuvem de formas casadas",
+        "titulo": "Nuvem de palavras",
         "subtitulo": "Tamanho proporcional à frequência",
     },
     "docs": {
@@ -25,7 +25,7 @@ PADRAO = {
         "xlabel": "Ocorrências",
     },
     "formas": {
-        "titulo": "Formas gráficas casadas",
+        "titulo": "Termos associados",
         "subtitulo": "Formas de superfície recuperadas pela consulta booleana",
         "xlabel": "Ocorrências",
     },
@@ -38,6 +38,33 @@ PADRAO = {
         "media": "Média",
     },
 }
+
+# Preferências do utilizador (sobrevive entre sessões da GUI)
+DEFEITO_UTILIZADOR = Path(__file__).resolve().parent / "legendas_defeito.json"
+
+
+def carregar_defeito_utilizador() -> dict:
+    """PADRAO fundido com ``legendas_defeito.json`` (se existir)."""
+    return carregar(DEFEITO_UTILIZADOR if DEFEITO_UTILIZADOR.exists() else None)
+
+
+def guardar_defeito_utilizador(legendas: dict) -> Path:
+    """Grava as legendas actuais como defeito da próxima sessão."""
+    # Não persistir subtítulos com «Consulta: …» injectada pelo motor
+    limpo = json.loads(json.dumps(legendas))
+    for chave in ("sankey", "nuvem", "docs", "formas", "near"):
+        bloco = limpo.get(chave)
+        if not isinstance(bloco, dict):
+            continue
+        sub = str(bloco.get("subtitulo") or "")
+        if sub.startswith("Consulta:"):
+            # manter só a parte após « · » se existir; senão limpar
+            if "  ·  " in sub:
+                bloco["subtitulo"] = sub.split("  ·  ", 1)[1].strip()
+            else:
+                bloco["subtitulo"] = PADRAO.get(chave, {}).get("subtitulo", "")
+    guardar(DEFEITO_UTILIZADOR, limpo)
+    return DEFEITO_UTILIZADOR
 
 
 def carregar(caminho: Path | str | None, consulta: str = "") -> dict:
