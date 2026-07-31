@@ -430,7 +430,9 @@ def analisar(xlsx: Path, saida: Path | None = None,
             "static -> invariancia_diacronica.")
     if colinear_deterministica(nuc, "canonical_term", "polaridade"):
         avisos.append(
-            "AVISO: polaridade e funcao de canonical_term no lexico adjudicado.")
+            "polaridade é função de canonical_term no léxico adjudicado "
+            "(cada termo tem uma só polaridade). Esperado em classes "
+            "mono-polares; não é falha da análise.")
 
     # --- 2_Frequencias (A2) ----------------------------------------------
     freq_tok = (nuc.groupby("canonical_term")
@@ -510,7 +512,10 @@ def analisar(xlsx: Path, saida: Path | None = None,
                 "metodo": r["metodo"],
             })
         else:
-            avisos.append("Teste relacao×polaridade bloqueado (colinearidade).")
+            avisos.append(
+                "teste relação×polaridade omitido: tabela degenerada "
+                "(só uma polaridade nas nucleares → colinearidade). "
+                "Não é falha; o teste χ² não se aplica.")
 
     if ("eixo" in dedup.columns and col_rel in dedup.columns
             and not any("eixo e funcao" in a for a in avisos)):
@@ -880,9 +885,23 @@ def analisar(xlsx: Path, saida: Path | None = None,
     wb.save(saida)
 
     print(resumo.to_string(index=False))
-    for a in avisos:
-        print("AVISO:", a)
-    print(f"\nConcluido: {saida}")
+    print()
+    print("=== Análise concluída com sucesso ===")
+    print(f"Ficheiro de saída (fase Analisar): {saida}")
+    print(
+        "Próximo passo na GUI: «4. Apêndice DOCX» — pode usar este "
+        "*_analise.xlsx ou o Excel revisto (*_v2.xlsx)."
+    )
+    if avisos:
+        print()
+        print(
+            "Notas estatísticas (salvaguardas — a análise NÃO falhou):"
+        )
+        for a in avisos:
+            txt = a.strip()
+            if txt.lower().startswith("aviso:"):
+                txt = txt.split(":", 1)[1].strip()
+            print(f"  · {txt}")
     return 0
 
 
