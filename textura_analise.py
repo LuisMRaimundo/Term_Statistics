@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import math
+import re
 import sys
 from collections import Counter
 from datetime import datetime
@@ -66,11 +67,73 @@ def _meta_linha(unidade: str, n: int) -> pd.DataFrame:
     return pd.DataFrame({"unidade": [unidade], "N": [n]})
 
 
-def _escrever_folha(xw, nome: str, df: pd.DataFrame, unidade: str, n: int):
+def _escrever_folha(
+    xw,
+    nome: str,
+    df: pd.DataFrame,
+    unidade: str,
+    n: int,
+    *,
+    com_meta: bool = True,
+):
+    """Escreve folha estatística.
+
+    ``com_meta=False`` para folhas de concordância reutilizáveis (sem banner
+    ``unidade``/``N`` nas primeiras linhas — esse banner partia
+    ``pd.read_excel`` em re-análises).
+    """
+    if not com_meta:
+        if df is not None and len(df):
+            df.to_excel(xw, sheet_name=nome, index=False)
+        return
     meta = _meta_linha(unidade, n)
     meta.to_excel(xw, sheet_name=nome, index=False, startrow=0)
     if df is not None and len(df):
         df.to_excel(xw, sheet_name=nome, index=False, startrow=3)
+
+
+def _parece_banner_meta(cols) -> bool:
+    c = [str(x).strip().lower() for x in list(cols)]
+    return len(c) >= 2 and c[0] == "unidade" and c[1] == "n"
+
+
+def ler_folha_concordancia(xlsx, sheet: str = "8_Concordancia") -> pd.DataFrame:
+    """Lê concordância fase 1 ou export de análise (com banner meta legado)."""
+    conc = pd.read_excel(xlsx, sheet_name=sheet)
+    if "relacao_sintactica" in conc.columns:
+        return conc
+    if _parece_banner_meta(conc.columns):
+        # Export antigo de textura_analise: meta nas linhas 0–2, cabeçalho na 3
+        conc2 = pd.read_excel(xlsx, sheet_name=sheet, header=3)
+        if "relacao_sintactica" in conc2.columns:
+            print(
+                f"  [aviso] {sheet}: formato de saída de análise (banner meta); "
+                "a ler cabeçalho na linha 4. Prefira o Excel *_near* / "
+                "*_revisto* como entrada da fase 2.",
+                flush=True,
+            )
+            return conc2
+    return conc
+
+
+def _sugerir_entrada_revisao(xlsx: Path) -> str:
+    """Se o utilizador passou *_analise.xlsx, apontar o Excel de revisão."""
+    nome = xlsx.name
+    low = nome.lower()
+    if "_analise" not in low:
+        return ""
+    stem = re.sub(r"_analise(\.xlsx)?$", "", nome, flags=re.I)
+    if not stem.lower().endswith(".xlsx"):
+        cand = xlsx.with_name(stem + ".xlsx")
+    else:
+        cand = xlsx.with_name(stem)
+    if cand.exists():
+        return str(cand)
+    # Compósitaa_near_revisto_LR_v2_analise → …_v2.xlsx
+    alt = xlsx.with_name(re.sub(r"_analise\.xlsx$", ".xlsx", nome, flags=re.I))
+    if alt.exists() and alt != xlsx:
+        return str(alt)
+    return ""
 
 
 def cramers_v(tab: pd.DataFrame) -> float:
@@ -153,6 +216,7 @@ def polaridade_nulo_banda(res_nuc: pd.DataFrame, hits_banda: dict | None,
 
 
 def validar_fase1(xlsx: Path, *, estrito: bool = False) -> dict:
+    xlsx = Path(xlsx)
     with pd.ExcelFile(xlsx) as xl:
         sheets = list(xl.sheet_names)
         if "0_Instrucoes" not in sheets:
@@ -161,7 +225,22 @@ def validar_fase1(xlsx: Path, *, estrito: bool = False) -> dict:
                 "(extraccao para revisao). Corra textura_near.py primeiro.")
         if "8_Concordancia" not in sheets:
             raise SystemExit("Falta a folha 8_Concordancia.")
-        conc = pd.read_excel(xl, sheet_name="8_Concordancia")
+        eh_saida_analise = (
+            "1_Resumo" in sheets
+            or "3_Testes" in sheets
+            or "_analise" in xlsx.name.lower()
+        )
+        if eh_saida_analise:
+            alt = _sugerir_entrada_revisao(xlsx)
+            print(
+                "  [aviso] Este Excel parece saída da fase 2 (*_analise / "
+                "folhas 1_Resumo…). A entrada correcta é o Excel de revisão "
+                "(*_near* / *_revisto*) com 8_Concordancia editável.",
+                flush=True,
+            )
+            if alt:
+                print(f"  [aviso] Use em vez disso:\n    {alt}", flush=True)
+        conc = ler_folha_concordancia(xl, "8_Concordancia")
         meta = {}
         try:
             inst = pd.read_excel(xl, sheet_name="0_Instrucoes")
@@ -171,7 +250,13 @@ def validar_fase1(xlsx: Path, *, estrito: bool = False) -> dict:
             pass
     for c in ("relacao_sintactica", "nuclear", "canonical_term"):
         if c not in conc.columns:
-            raise SystemExit(f"Coluna obrigatoria em falta: {c}")
+            alt = _sugerir_entrada_revisao(xlsx)
+            tip = (
+                f"\nProvável causa: seleccionou um *_analise.xlsx (saída da "
+                f"fase 2), não o Excel revisto.\n"
+                f"Use: {alt or xlsx.with_name(xlsx.stem.replace('_analise', '') + '.xlsx')}"
+            )
+            raise SystemExit(f"Coluna obrigatoria em falta: {c}.{tip}")
     # validar taxonomia
     for i, row in conc.iterrows():
         rel = str(row.get("relacao_sintactica", ""))
@@ -694,13 +779,18 @@ def analisar(xlsx: Path, saida: Path | None = None,
             _escrever_folha(xw, "5_Coocorrencia", cooc.reset_index(),
                             f"obras (co-presenca; unidade={cooc_unidade})",
                             int(nuc[col_doc].nunique()))
-        _escrever_folha(xw, "8_Concordancia", brutas,
-                        "todas as linhas (brutas=hits)", n_bruto)
+        # Concordância sem banner meta — reutilizável / legível por pandas
+        _escrever_folha(
+            xw, "8_Concordancia", brutas,
+            "todas as linhas (brutas=hits)", n_bruto, com_meta=False,
+        )
         # Preservar / regenerar folhas de identidade (schema ≥ 2)
         try:
             hits_alias = brutas
-            _escrever_folha(xw, "8_Concordancia_Hits", hits_alias,
-                            "hits NEAR (= 8_Concordancia)", n_bruto)
+            _escrever_folha(
+                xw, "8_Concordancia_Hits", hits_alias,
+                "hits NEAR (= 8_Concordancia)", n_bruto, com_meta=False,
+            )
         except Exception:
             pass
         try:
@@ -718,8 +808,13 @@ def analisar(xlsx: Path, saida: Path | None = None,
                             "9_Excluidas"):
             if folha_extra in info["sheets"]:
                 try:
-                    pd.read_excel(xlsx, sheet_name=folha_extra).to_excel(
-                        xw, sheet_name=folha_extra, index=False)
+                    if folha_extra == "9_Excluidas":
+                        excl = ler_folha_concordancia(xlsx, "9_Excluidas")
+                        excl.to_excel(
+                            xw, sheet_name="9_Excluidas", index=False)
+                    else:
+                        pd.read_excel(xlsx, sheet_name=folha_extra).to_excel(
+                            xw, sheet_name=folha_extra, index=False)
                 except Exception:
                     pass
         if len(assoc):

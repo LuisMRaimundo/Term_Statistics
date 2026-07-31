@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import os
 import queue
+import re
 import subprocess
 import sys
 import tempfile
@@ -649,6 +650,37 @@ class App(tk.Tk):
                 messagebox.showwarning("Excel", "Escolha o Excel revisto.",
                                        parent=dlg)
                 return
+            pin = Path(xin)
+            # Evitar *_analise.xlsx (saída da fase 2) como entrada
+            if "_analise" in pin.stem.lower() or pin.name.lower().endswith(
+                "_analise.xlsx"
+            ):
+                alt = pin.with_name(
+                    pin.name.replace("_analise.xlsx", ".xlsx")
+                    .replace("_analise.XLSX", ".xlsx")
+                )
+                if not alt.exists():
+                    # …_v2_analise → …_v2.xlsx
+                    alt = pin.with_name(
+                        re.sub(r"_analise\.xlsx$", ".xlsx", pin.name, flags=re.I)
+                    )
+                msg = (
+                    "Seleccionou um Excel de *análise* (*_analise.xlsx), "
+                    "não o Excel de *revisão* (*_near* / *_revisto*).\n\n"
+                    "A fase 3 «Analisar» exige 8_Concordancia com "
+                    "relacao_sintactica."
+                )
+                if alt.exists():
+                    msg += f"\n\nUsar em vez disso?\n{alt}"
+                    if messagebox.askyesno("Excel errado", msg, parent=dlg):
+                        xin = str(alt)
+                        v_in.set(xin)
+                        v_out.set(str(alt.with_name(alt.stem + "_analise.xlsx")))
+                    else:
+                        return
+                else:
+                    messagebox.showerror("Excel errado", msg, parent=dlg)
+                    return
             rels = []
             if not self.v_rel_todas_nuc.get():
                 for flag, nome in (
