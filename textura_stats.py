@@ -55,13 +55,34 @@ def bayes_factor_proporcao(k, n, p0=0.5):
     evidência a favor de H0. Ao contrário do valor de p, quantifica
     também a evidência a favor da hipótese nula — o que importa quando o
     resultado esperado é a ausência de inclinação.
+
+    Com *n* grande e proporção longe de ``p0``, o BF cresce sem limite
+    prático: devolve ``inf`` / ``0.0`` em vez de ``math.exp`` overflow.
     """
     if n == 0:
         return float("nan")
+    try:
+        k_f = float(k)
+        n_f = float(n)
+        p0_f = float(p0)
+    except (TypeError, ValueError):
+        return float("nan")
+    if k_f < 0 or k_f > n_f or not (0.0 < p0_f < 1.0):
+        return float("nan")
     # verosimilhança marginal sob H1 (a priori uniforme) = Beta(k+1, n-k+1)
-    log_m1 = (math.lgamma(k + 1) + math.lgamma(n - k + 1) - math.lgamma(n + 2))
-    log_m0 = k * math.log(p0) + (n - k) * math.log(1 - p0)
-    return round(math.exp(log_m1 - log_m0), 4)
+    log_m1 = (
+        math.lgamma(k_f + 1)
+        + math.lgamma(n_f - k_f + 1)
+        - math.lgamma(n_f + 2)
+    )
+    log_m0 = k_f * math.log(p0_f) + (n_f - k_f) * math.log(1.0 - p0_f)
+    log_bf = log_m1 - log_m0
+    # math.exp overflow ~709; clip to signed infinity / zero for reports
+    if log_bf >= 700.0:
+        return float("inf")
+    if log_bf <= -700.0:
+        return 0.0
+    return round(math.exp(log_bf), 4)
 
 
 def permutacao_diferenca(grupo_a, grupo_b, n_rep=10000, semente=20260724):
