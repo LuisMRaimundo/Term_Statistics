@@ -406,21 +406,63 @@ def analisar(xlsx: Path, saida: Path | None = None,
     tot_near = float(meta.get("tot_near", 0) or 0)
     tot_banda = float(meta.get("tot_banda", 0) or 0)
 
+    # Sempre recontar a partir das nucleares *actuais* (após revisão).
+    # Os n_* em 0_Instrucoes são da extracção fase 1 e ficam obsoletos
+    # quando o utilizador muda nuclear TRUE↔FALSE.
+    if "texture_occurrence_id" in dedup.columns:
+        n_occ_nuc = int(dedup["texture_occurrence_id"].nunique())
+    elif "texture_occurrence_id" in nuc.columns:
+        n_occ_nuc = int(nuc["texture_occurrence_id"].nunique())
+    else:
+        n_occ_nuc = n_dedup
     n_occ_meta = meta.get("n_ocorrencias_nucleares", meta.get("n_ocorrencias"))
-    n_occ_nuc = (
-        int(float(n_occ_meta)) if n_occ_meta not in (None, "") else
-        (int(dedup["texture_occurrence_id"].nunique())
-         if "texture_occurrence_id" in dedup.columns else n_dedup)
-    )
+    try:
+        n_occ_meta_i = int(float(n_occ_meta)) if n_occ_meta not in (None, "") else None
+    except (TypeError, ValueError):
+        n_occ_meta_i = None
+    if n_occ_meta_i is not None and n_occ_meta_i != n_occ_nuc:
+        avisos_pre = (
+            f"meta fase 1 tinha n_ocorrencias_nucleares={n_occ_meta_i}; "
+            f"recontado após revisão = {n_occ_nuc} (usado nos resultados)."
+        )
+    else:
+        avisos_pre = ""
     print(f"Fase 2 | brutas={n_bruto} nucleares(hits)={n_nuc} "
           f"dedup({modo_dedupe})={n_dedup} "
-          f"ocorrencias_nucleares≈{n_occ_nuc} janelas_no={n_janelas_no}",
+          f"ocorrencias_nucleares={n_occ_nuc} janelas_no={n_janelas_no}",
           flush=True)
+    if avisos_pre:
+        print(f"  [aviso] {avisos_pre}", flush=True)
     if legendas:
         print(f"Legendas: {legendas} | {tleg.resumo_titulos(leg)}", flush=True)
 
     # --- A9 colinearidade -------------------------------------------------
     avisos = []
+    if avisos_pre:
+        avisos.append(avisos_pre)
+    # Folha Hits desactualizada (utilizador editou só 8_Concordancia, ou só Hits)
+    if "8_Concordancia_Hits" in info.get("sheets", []):
+        try:
+            hits_df = pd.read_excel(xlsx, sheet_name="8_Concordancia_Hits")
+            if "nuclear" in hits_df.columns:
+                h_true = hits_df["nuclear"].map(
+                    lambda v: v is True or str(v).lower() in {"true", "1", "sim"}
+                ).sum()
+                if int(h_true) != int(n_nuc):
+                    avisos.append(
+                        f"8_Concordancia_Hits está desactualizada "
+                        f"(nuclear=True: Hits={int(h_true)} ≠ "
+                        f"Concordancia={n_nuc}). A análise usa só "
+                        f"8_Concordancia — edite essa folha, não Hits."
+                    )
+                    print(
+                        f"  [aviso] 8_Concordancia_Hits desactualizada "
+                        f"(True={int(h_true)} vs Concordancia={n_nuc}). "
+                        f"Edite 8_Concordancia.",
+                        flush=True,
+                    )
+        except Exception:  # noqa: BLE001
+            pass
     if colinear_deterministica(nuc, "canonical_term", "eixo"):
         avisos.append(
             "BLOQUEADO: eixo e funcao deterministica de canonical_term "

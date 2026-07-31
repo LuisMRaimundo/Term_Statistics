@@ -243,9 +243,10 @@ class App(tk.Tk):
             side="left")
         ttk.Label(
             root, style="Hint.TLabel", wraplength=860,
-            text="2. Rever: abra o Excel, edite relacao_sintactica / nuclear. "
-                 "3. Analisar → estatística. "
-                 "4. Apêndice DOCX → concordância legível (fase 3)."
+            text="2. Rever: edite só a folha 8_Concordancia "
+                 "(nuclear / relacao_sintactica) — não Hits. "
+                 "3. Analisar de novo após gravar. "
+                 "4. Apêndice DOCX."
         ).pack(anchor="w", pady=(6, 0))
 
         # —— utilitários aditivos (não alteram o fluxo 1–4) ——
