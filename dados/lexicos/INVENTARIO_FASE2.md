@@ -50,7 +50,18 @@ exactamente uma vez» verifica-se por diff/grep contra este inventário.
 ## Estado pós-movimento
 
 Fonte única: `textura/lexico.py` carrega `dados/lexicos/*.tsv`.
-Consumidores reexportam (sem literais). Raiz `dominios.tsv` mantém-se
-como stub de compatibilidade; o default do pipeline usa
-`caminho_dominios_path()` → `dados/lexicos/dominios_path.tsv`.
-Aceitação: `tests/test_lexicos_fonte_unica.py`.
+Consumidores reexportam (sem literais). Aceitação:
+`tests/test_lexicos_fonte_unica.py`.
+
+### Precedência `dominios.tsv` (não silenciosa)
+
+| Situação | Comportamento |
+|---|---|
+| Só raiz com regras | Usa raiz + `DeprecationWarning` (nomeia `dados/lexicos/dominios_path.tsv`) |
+| Só canónico | Usa `dados/lexicos/dominios_path.tsv` |
+| Ambos idênticos | Usa canónico + aviso para remover a raiz |
+| Ambos diferem | `LexicoError` — migração consciente obrigatória |
+
+A raiz enviada no repositório é **só comentários** (sem regras), para não
+sombrear o canónico. Personalizações antigas na raiz continuam a ser
+honradas ou a falhar alto se divergirem do canónico.

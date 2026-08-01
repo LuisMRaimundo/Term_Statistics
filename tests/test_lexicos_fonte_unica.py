@@ -1,9 +1,13 @@
 # -*- coding: utf-8 -*-
-"""Phase 2: TSV lexicons load non-empty; taxonomy covers path + janela domains."""
+"""Phase 2: single-source lexicons, taxonomy consistency, loud loader failures."""
 
 from __future__ import annotations
 
+import os
+import shutil
+import tempfile
 import unittest
+import warnings
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -26,8 +30,18 @@ TSVS_OBRIGATORIOS = (
     "falsos_amigos.tsv",
 )
 
+CTX_GEO = (
+    "replacement of bioclasts by a mixture of dolomite and "
+    "homogeneous textures in breccia facies of the Waulsortian"
+)
+
 
 class TestLexicosFonteUnica(unittest.TestCase):
+    def tearDown(self):
+        from textura import lexico as lx
+
+        lx.definir_dir_lexicos_para_teste(None)
+
     def test_tsv_files_present_and_non_empty(self):
         for nome in TSVS_OBRIGATORIOS:
             path = DIR / nome
@@ -60,6 +74,23 @@ class TestLexicosFonteUnica(unittest.TestCase):
             self.assertIn(dom, tax)
             self.assertIn(tax[dom], {"janela", "ambos"})
 
+    def test_janela_labels_subset_of_merged_taxonomy(self):
+        """Every dominio_janela label must exist in the merged taxonomy.
+
+        Prevents dominio_janela:geologia naming a domain path-triage
+        cannot recognise after a lone TSV edit.
+        """
+        from textura import lexico as lx
+
+        tax = lx.carregar_dominio_taxonomia()
+        missing = sorted(set(lx.carregar_dominio_janela()) - set(tax))
+        self.assertEqual(
+            missing,
+            [],
+            "dominio_janela labels absent from dominio_taxonomia.tsv: "
+            + ", ".join(missing),
+        )
+
     def test_consumers_share_same_object_identity_for_frozensets(self):
         """Re-exports must not redefine literals — same frozenset objects."""
         from textura import config, lexico
@@ -76,7 +107,6 @@ class TestLexicosFonteUnica(unittest.TestCase):
         """Grep guard: inventory lists must not be re-literalised outside lexico."""
         import re
 
-        # Only brace-literal redefinitions (not set(tsv) / import aliases).
         ban = re.compile(
             r"^(NOS|NEGACAO|GRADUACAO|MODALIDADE|COPULAS|ABREVIATURAS|"
             r"POLO_ESTABILIDADE|POLO_VARIABILIDADE|RELACOES_NUCLEARES|"
@@ -95,8 +125,180 @@ class TestLexicosFonteUnica(unittest.TestCase):
             text = path.read_text(encoding="utf-8")
             for i, line in enumerate(text.splitlines(), 1):
                 if ban.match(line.strip()):
-                    offenders.append(f"{path.relative_to(ROOT)}:{i}:{line.strip()}")
-        self.assertEqual(offenders, [], "literal lexicon redefinitions:\n" + "\n".join(offenders))
+                    offenders.append(
+                        f"{path.relative_to(ROOT)}:{i}:{line.strip()}"
+                    )
+        self.assertEqual(
+            offenders, [],
+            "literal lexicon redefinitions:\n" + "\n".join(offenders),
+        )
+
+    def test_dominios_precedence_root_only_wins_with_deprecation(self):
+        from textura import lexico as lx
+
+        with tempfile.TemporaryDirectory() as tmp:
+            td = Path(tmp)
+            raiz = td / "dominios.tsv"
+            canon = td / "dominios_path.tsv"
+            raiz.write_text(
+                "# custom\n(?i)meu_corpus\tmusicologia\n", encoding="utf-8"
+            )
+            with warnings.catch_warnings(record=True) as caught:
+                warnings.simplefilter("always")
+                path = lx.caminho_dominios_path(
+                    raiz=raiz, canon=canon, avisar=True
+                )
+            self.assertEqual(path, raiz)
+            self.assertTrue(
+                any(issubclass(w.category, DeprecationWarning) for w in caught)
+            )
+            self.assertTrue(
+                any("dados/lexicos/dominios_path.tsv" in str(w.message)
+                    or "dominios_path.tsv" in str(w.message)
+                    for w in caught)
+            )
+
+    def test_dominios_precedence_conflict_raises(self):
+        from textura import lexico as lx
+
+        with tempfile.TemporaryDirectory() as tmp:
+            td = Path(tmp)
+            raiz = td / "dominios.tsv"
+            canon = td / "dominios_path.tsv"
+            raiz.write_text("(?i)custom\tmusicologia\n", encoding="utf-8")
+            canon.write_text("(?i)other\tmir_visao\n", encoding="utf-8")
+            with self.assertRaises(lx.LexicoError) as ctx:
+                lx.caminho_dominios_path(raiz=raiz, canon=canon, avisar=False)
+            msg = str(ctx.exception)
+            self.assertIn(str(raiz), msg)
+            self.assertIn(str(canon), msg)
+
+    def test_dominios_identical_prefers_canonical(self):
+        from textura import lexico as lx
+
+        with tempfile.TemporaryDirectory() as tmp:
+            td = Path(tmp)
+            raiz = td / "dominios.tsv"
+            canon = td / "dominios_path.tsv"
+            body = "(?i)todos os textos\tmusicologia\n"
+            raiz.write_text(body, encoding="utf-8")
+            canon.write_text(body, encoding="utf-8")
+            with warnings.catch_warnings(record=True) as caught:
+                warnings.simplefilter("always")
+                path = lx.caminho_dominios_path(
+                    raiz=raiz, canon=canon, avisar=True
+                )
+            self.assertEqual(path, canon)
+            self.assertTrue(
+                any(issubclass(w.category, DeprecationWarning) for w in caught)
+            )
+
+    def test_malformed_tsv_raises_naming_file(self):
+        from textura import lexico as lx
+
+        with tempfile.TemporaryDirectory() as tmp:
+            td = Path(tmp)
+            shutil.copytree(DIR, td / "lexicos")
+            alvo = td / "lexicos" / "negacao.tsv"
+            alvo.write_text(
+                "# broken\ntoken\nnot\twith\ttabs\n", encoding="utf-8"
+            )
+            lx.definir_dir_lexicos_para_teste(td / "lexicos")
+            with self.assertRaises(lx.LexicoError) as ctx:
+                lx._load_frozenset("negacao.tsv")
+            self.assertIn("negacao.tsv", str(ctx.exception))
+
+    def test_empty_tsv_raises_naming_file(self):
+        from textura import lexico as lx
+
+        with tempfile.TemporaryDirectory() as tmp:
+            td = Path(tmp)
+            shutil.copytree(DIR, td / "lexicos")
+            alvo = td / "lexicos" / "copulas.tsv"
+            alvo.write_text("# only comments\n", encoding="utf-8")
+            lx.definir_dir_lexicos_para_teste(td / "lexicos")
+            with self.assertRaises(lx.LexicoError) as ctx:
+                lx._load_frozenset("copulas.tsv")
+            self.assertIn("copulas.tsv", str(ctx.exception))
+
+    def test_loader_anchored_to_project_root_not_cwd(self):
+        from textura import lexico as lx
+
+        here = Path.cwd()
+        with tempfile.TemporaryDirectory() as tmp:
+            os.chdir(tmp)
+            try:
+                self.assertEqual(lx.dir_lexicos(), DIR)
+                self.assertEqual(lx.raiz_projecto(), ROOT)
+                lx._limpar_caches()
+                nos = lx.carregar_nos()
+                self.assertIn("en", nos)
+                self.assertEqual(lx.dominio_janela(CTX_GEO), "geologia")
+            finally:
+                os.chdir(here)
+
+    def test_live_tsv_perturbation_changes_dominio_janela(self):
+        """Removing geologia cues from a TSV copy must clear classification."""
+        from textura import lexico as lx
+
+        self.assertEqual(lx.dominio_janela(CTX_GEO), "geologia")
+        with tempfile.TemporaryDirectory() as tmp:
+            td = Path(tmp)
+            shutil.copytree(DIR, td / "lexicos")
+            janela = td / "lexicos" / "dominio_janela.tsv"
+            lines = [
+                ln for ln in janela.read_text(encoding="utf-8").splitlines()
+                if not ln.startswith("geologia\t")
+            ]
+            janela.write_text("\n".join(lines) + "\n", encoding="utf-8")
+            lx.definir_dir_lexicos_para_teste(td / "lexicos")
+            self.assertEqual(lx.dominio_janela(CTX_GEO), "")
+            # Taxonomy invariant still holds on the perturbed copy
+            tax = lx.carregar_dominio_taxonomia()
+            for dom in lx.carregar_dominio_janela():
+                self.assertIn(dom, tax)
+
+
+class TestLexicoLiveOnMiniature(unittest.TestCase):
+    """Golden-adjacent: TSV edit changes dominio_janela on matrix context."""
+
+    def tearDown(self):
+        from textura import lexico as lx
+
+        lx.definir_dir_lexicos_para_teste(None)
+
+    def test_matrix_row_follows_perturbed_lexicon(self):
+        import pandas as pd
+        from textura import lexico as lx
+
+        df = pd.read_excel(
+            ROOT / "tests" / "fixtures" / "matriz_miniatura.xlsx",
+            header=None,
+        )
+        ctx_col = df.shape[1] - 2  # caminho, url, raiz, contexto, n — ctx≈14
+        # Prefer the column that actually contains the geology sentence
+        ctx = None
+        for col in df.columns:
+            for val in df[col].astype(str):
+                if "bioclast" in val.lower():
+                    ctx = val
+                    break
+            if ctx:
+                break
+        self.assertIsNotNone(ctx)
+        self.assertEqual(lx.dominio_janela(ctx), "geologia")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            td = Path(tmp)
+            shutil.copytree(DIR, td / "lexicos")
+            janela = td / "lexicos" / "dominio_janela.tsv"
+            lines = [
+                ln for ln in janela.read_text(encoding="utf-8").splitlines()
+                if not ln.startswith("geologia\t")
+            ]
+            janela.write_text("\n".join(lines) + "\n", encoding="utf-8")
+            lx.definir_dir_lexicos_para_teste(td / "lexicos")
+            self.assertEqual(lx.dominio_janela(ctx), "")
 
 
 if __name__ == "__main__":
