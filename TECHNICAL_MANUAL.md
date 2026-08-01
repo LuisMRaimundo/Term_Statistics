@@ -25,7 +25,7 @@ The methodological core is a **three-level ontology**:
 3. [End-to-end pipeline](#3-end-to-end-pipeline)  
 4. [Data model (schema near ≥ 2)](#4-data-model-schema-near--2)  
 5. [NEAR extraction algorithms](#5-near-extraction-algorithms)  
-6. [Syntactic classification](#6-syntactic-classification)  
+6. [Syntactic classification](#6-syntactic-classification) (incl. `revisao_sugerida`, column dictionary)  
 7. [Statistical methods (with LaTeX)](#7-statistical-methods-with-latex)  
 8. [Phase-3 DOCX appendix](#8-phase-3-docx-appendix)  
 9. [Pedagogical tutorial](#9-pedagogical-tutorial)  
@@ -242,6 +242,42 @@ Polarity poles and semantic axes come from the adjudicated lexicon (`textura_lex
 - polarity: `estabilidade` / `variabilidade`  
 - axis: `homogeneidade_sincronica` / `invariancia_diacronica` / `ambos`
 
+### 6.1 `revisao_sugerida` vocabulary
+
+Automatic review tags are emitted only from `textura/revisao.py` (exact forms and
+prefixed patterns). Current inventory:
+
+| Form | Meaning |
+|---|---|
+| `genitiva_por_complemento` | Genitive recovered via complement path |
+| `atributiva_via_conj` | Attributive after conjunction normalisation |
+| `atributiva_coordenada` | Shared adjectival modification / coordination |
+| `coordenacao_heterogenea:*` | Texture coordinated with a non-textural noun |
+| `associativa_com_nao_textural:*` | Associative *with/com/…* to a non-textural noun |
+| `dominio_janela:*` | Extra-musical domain cue in the window |
+
+Multiple tags in one cell are joined with `; `. The live set is listed in
+[`dados/dicionario_colunas.md`](dados/dicionario_colunas.md) (regenerate with
+`python utilitarios/gera_dicionario_colunas.py`).
+
+### 6.2 Column dictionary (pipeline)
+
+Export order and short descriptions for `8_Concordancia` are defined as
+`COLUNAS_HITS_PRIORIDADE` / `DESCRICAO_COLUNAS_HITS` in `textura/exportacao.py`.
+The generated file [`dados/dicionario_colunas.md`](dados/dicionario_colunas.md)
+is the human-readable mirror; CI fails if it drifts from the live constants.
+
+Post-hoc `qa_*` columns from `textura_concordancia_qa.py` are **not** part of
+this dictionary — see that script’s module docstring.
+
+### 6.3 Language coverage honesty
+
+| Language | Status |
+|---|---|
+| EN | Golden-locked (full miniature chain) |
+| PT | Golden-locked on **attributive** constructions only (`tests/test_e2e_golden_pt.py`); genitive / coordination / negation enrichment is backlog |
+| FR / DE | Registered as `nao_validado` in `textura/linguas.py` |
+
 ---
 
 ## 7. Statistical methods (with LaTeX)
@@ -272,6 +308,14 @@ E_{11}=\frac{r_1\,(O_{11}+O_{12})}{n}
 $$
 
 *Implementation:* `textura_near.medidas_associacao`.
+
+### Association measures: interpretation limits
+
+Band-based OR, $G^2$, MI, logDice and related scores compare the NEAR window
+to a **farther positional band in the same KWIC contexts**. They are **not**
+corpus-wide keyness against a reference corpus, and must not be reported as
+such. Absolute magnitudes are only comparable within the same extract
+(same `--near`, `--banda`, lexicon and review state).
 
 ---
 
@@ -714,6 +758,11 @@ python textura_apendice.py --xlsx UNIFORME_near.xlsx --refs refs_apa7.xlsx
 
 `python textura_gui.py` — same phases with file pickers.
 
+The GUI runs CLI tools with `stderr=subprocess.STDOUT` and streams every line
+into the on-screen log panel. Migration notices such as the root
+`dominios.tsv` `AVISO:` therefore appear in the GUI log (not only in a hidden
+terminal). Prefer editing `dados/lexicos/dominios_path.tsv` for new work.
+
 ---
 
 ## 11. Reproducibility & limits
@@ -727,6 +776,22 @@ python textura_apendice.py --xlsx UNIFORME_near.xlsx --refs refs_apa7.xlsx
 | Page labels | Many PDFs lack `/PageLabels` → only `(PDF p. N)` is honest |
 | Human review | Required for publishable nuclear sets |
 | DOCX appendix | Built with `python-docx` only (`--no-paginas-pdf` in CI); no Microsoft Office runtime |
+
+### Environment reconstruction (authoritative pins)
+
+To reproduce dissertation numbers, install with **both** files:
+
+```bash
+pip install -r requirements.txt -c constraints.txt
+```
+
+- `requirements.txt` — capability floor (what the suite needs).  
+- `constraints.txt` — **authoritative pins** for counts and golden parses
+  (`spacy==3.8.7`, `click`, `pandas` band, …). A bare
+  `pip install -r requirements.txt` without `-c constraints.txt` may resolve
+  a legitimate but different stack and is **not** the research environment.
+
+Then install the pinned spaCy model wheels (URLs in `.github/workflows/ci.yml`).
 
 ### spaCy model pinning (scientific reproducibility)
 
@@ -751,14 +816,15 @@ a parse and break golden assertions without any intentional code change.
    model must be re-audited.
 4. Language is chosen at **run level** (`--lingua`). Mode `todas` unions NOS
    paradigms but still classifies with EN model/prepositions — the CLI logs
-   this limitation explicitly.
+   this limitation explicitly. PT golden coverage is attributive-only until
+   the fixture backlog (genitive / coordination / negation) is filled.
 
 ### Path→domain configuration
 
 Default rules live in `dados/lexicos/dominios_path.tsv`. A non-empty root
 `dominios.tsv` is legacy: the CLI prints an `AVISO` on stderr (visible under
-default Python warning filters). Conflicting root vs canonical files raise
-rather than choosing silently.
+default Python warning filters; the GUI merges stderr into its log panel).
+Conflicting root vs canonical files raise rather than choosing silently.
 
 ---
 

@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 
 from textura.config import MODALIDADE, RELACOES_NUCLEARES
+from textura.revisao import etiqueta_exacta, etiqueta_prefixada, juntar_etiquetas
 from textura.tokenizacao import anota_sintaxe, tokeniza
 
 
@@ -202,15 +203,14 @@ def relacao_dependencia(
     avisos = []
     coord = _coordenacao_heterogenea(t_no)
     if coord:
-        avisos.append(f"coordenacao_heterogenea:{coord}")
+        avisos.append(etiqueta_prefixada("coordenacao_heterogenea", coord))
     assoc = _associativa_heterogenea(
         t_te, t_no, preps_associativa=preps_associativa)
     if assoc:
-        avisos.append(f"associativa_com_nao_textural:{assoc}")
+        avisos.append(etiqueta_prefixada("associativa_com_nao_textural", assoc))
     if avisos:
         prev = res.get("revisao_sugerida") or ""
-        res["revisao_sugerida"] = (
-            "; ".join([prev] + avisos) if prev else "; ".join(avisos))
+        res["revisao_sugerida"] = juntar_etiquetas(prev, *avisos)
     return res
 
 
@@ -233,8 +233,10 @@ def _relacao_dependencia_base(
 
     # R4.2 — genitiva ANTES de qualquer teste de governante directo
     if _tem_complemento_genitivo(t_te, t_no, preps_genitivo=preps_genitivo):
-        rev = "genitiva_por_complemento" if t_te.dep_ not in (
-            "pobj", "nmod", "") else ""
+        rev = (
+            etiqueta_exacta("genitiva_por_complemento")
+            if t_te.dep_ not in ("pobj", "nmod", "") else ""
+        )
         return _resultado_rel(
             "nominal_genitiva", gov0, percurso, "no_sobre_termo",
             nucleo_prop=t_no.text, revisao=rev, matched=matched)
@@ -287,7 +289,7 @@ def _relacao_dependencia_base(
 
     # --- atributiva directa (também após normalização de conj) ------------
     if base.dep_ in ("amod", "appos") and _mesmo_token(base.head, t_no):
-        rev = "atributiva_via_conj" if era_conj else ""
+        rev = etiqueta_exacta("atributiva_via_conj") if era_conj else ""
         return _resultado_rel(
             "atributiva", gov0 or t_no.text, percurso, "termo_sobre_no",
             nucleo_prop=t_no.text, revisao=rev, matched=matched)
@@ -296,7 +298,8 @@ def _relacao_dependencia_base(
     if _amod_coordenado_do_no(t_te, t_no):
         return _resultado_rel(
             "atributiva", gov0 or t_no.text, percurso, "termo_sobre_no",
-            nucleo_prop=t_no.text, revisao="atributiva_coordenada",
+            nucleo_prop=t_no.text,
+            revisao=etiqueta_exacta("atributiva_coordenada"),
             matched=matched)
 
     # --- nominal composto: «textural diversity» ---------------------------

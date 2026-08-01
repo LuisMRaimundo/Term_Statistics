@@ -75,6 +75,21 @@ Não mexa em: `source_matrix_row`, `texture_occurrence_id`, `match_id`, `hit_key
 
 Se a forma ou o termo canónico estiverem errados, **exclua a linha** (`nuclear=FALSE`) em vez de os reescrever.
 
+Dicionário completo das colunas do pipeline (ordem de exportação + descrições):
+[`dados/dicionario_colunas.md`](dados/dicionario_colunas.md).
+
+### `revisao_sugerida` (só leitura / pista)
+
+Etiquetas automáticas do classificador — **não as edite** como taxa oficial;
+use-as para priorizar a revisão humana. Valores canónicos:
+
+- exactas: `genitiva_por_complemento`, `atributiva_via_conj`, `atributiva_coordenada`
+- prefixadas: `coordenacao_heterogenea:*`, `associativa_com_nao_textural:*`,
+  `dominio_janela:*` (ex.: `dominio_janela:geologia`)
+
+Várias etiquetas na mesma célula separam-se por `; `. Inventário vivo: secção
+«Vocabulário `revisao_sugerida`» em `dados/dicionario_colunas.md`.
+
 ---
 
 ## 3. Ordem de revisão recomendada

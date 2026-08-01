@@ -61,6 +61,12 @@ FILL_REL = PatternFill("solid", fgColor="FFFF00")      # yellow — no clear lin
 FILL_DOM = PatternFill("solid", fgColor="FF9999")      # red    — extra-musical
 FILL_REV = PatternFill("solid", fgColor="00FFFF")      # turquoise — review
 
+# Post-hoc columns written by this script only (not part of the pipeline
+# column dictionary in dados/dicionario_colunas.md):
+#   qa_relacao            — second-opinion relation label
+#   qa_relacao_evidencia  — short evidence / motive string
+#   qa_dominio_extra      — extra-musical domain guess
+#   qa_dominio_cue        — cue token that triggered the domain guess
 QA_COLS = (
     "qa_relacao",
     "qa_relacao_evidencia",

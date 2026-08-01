@@ -87,6 +87,18 @@ from textura.linguas import (  # noqa: F401
     resolver_execucao,
 )
 
+# --- review vocabulary / column order (Phase 5) --------------------------
+from textura.exportacao import (  # noqa: F401
+    COLUNAS_HITS_PRIORIDADE,
+    DESCRICAO_COLUNAS_HITS,
+)
+from textura.revisao import (  # noqa: F401
+    REVISAO_EXACTAS,
+    REVISAO_PREFIXOS,
+    REVISAO_VOCABULARIO,
+    validar_revisao_sugerida,
+)
+
 # --- statistics -----------------------------------------------------------
 from textura.estatistica import (  # noqa: F401
     POLO_ESTABILIDADE,

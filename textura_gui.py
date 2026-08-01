@@ -1146,6 +1146,8 @@ class App(tk.Tk):
             # processo herdar um PYTHONPATH diferente.
             prev = env.get("PYTHONPATH", "")
             env["PYTHONPATH"] = str(AQUI) + (os.pathsep + prev if prev else "")
+            # stderr→stdout: avisos do pipeline (ex. dominios.tsv legado)
+            # aparecem no painel de registo da GUI, não num terminal oculto.
             self.proc = subprocess.Popen(
                 cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                 text=True, encoding="utf-8", errors="replace", bufsize=1,

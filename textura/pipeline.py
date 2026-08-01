@@ -32,6 +32,7 @@ from textura.exportacao import reordenar_colunas_hits
 from textura.lexico import caminho_dominios_path, dominio_janela
 from textura.linguas import CODIGOS as LINGUAS_CODIGOS, resolver_execucao
 from textura.relacoes import anota_com_heuristica, anota_com_spacy
+from textura.revisao import etiqueta_prefixada, juntar_etiquetas
 from textura.tokenizacao import (
     _Consulta, anota_sintaxe, compila_campo, emparelha_contexto, fronteiras_frase, indices_no, normaliza,
     procura_near, tokeniza,
@@ -440,9 +441,12 @@ def main() -> int:
         if "revisao_sugerida" in res.columns:
             _mx = res["dominio_janela"].astype(bool)
             res.loc[_mx, "revisao_sugerida"] = res.loc[_mx].apply(
-                lambda r: ((str(r["revisao_sugerida"]) + "; ")
-                           if r["revisao_sugerida"] else "")
-                + "dominio_janela:" + r["dominio_janela"], axis=1)
+                lambda r: juntar_etiquetas(
+                    str(r["revisao_sugerida"] or ""),
+                    etiqueta_prefixada("dominio_janela", r["dominio_janela"]),
+                ),
+                axis=1,
+            )
     res = reordenar_colunas_hits(res)
 
     res_excluidas = res.loc[~res["nuclear"].astype(bool)].copy() if (
