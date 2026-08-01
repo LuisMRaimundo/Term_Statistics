@@ -15,3 +15,5 @@ tests/fixtures/_probe_*
 tests/fixtures/_g_*
 # Cached spaCy model wheels (CI downloads; keep local installs out of git)
 .spacy-wheels/
+# PDFs-miniatura gerados por tests/fixtures/referencias/build_pdfs_miniatura.py
+tests/fixtures/referencias/*.pdf
