@@ -347,7 +347,8 @@ def main() -> int:
     if ttri is not None:
         dom_path = args.dominios
         if dom_path is None:
-            cand = Path(__file__).resolve().parent / "dominios.tsv"
+            # Project root (…/Term statistics), not the textura/ package dir
+            cand = Path(__file__).resolve().parents[1] / "dominios.tsv"
             if cand.is_file():
                 dom_path = cand
         regras = ttri.carregar_dominios(dom_path)

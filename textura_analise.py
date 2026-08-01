@@ -201,27 +201,30 @@ def colinear_deterministica(df, a: str, b: str) -> bool:
     return v == v and v >= 0.999
 
 
-def teste_contingencia(tab: pd.DataFrame, n_perm: int = 20000, semente=20260725):
-    """χ² ou Monte Carlo se alguma celula esperada < 5."""
+def teste_contingencia(tab: pd.DataFrame, n_perm: int = 20000, semente=20260725,
+                       min_validas: int = 200):
+    """χ² ou Monte Carlo se alguma celula esperada < 5.
+
+    Simulações degeneradas (expected zero) são saltadas; o denominador de p
+    usa só o número efectivo de draws válidos. Se esse número ficar abaixo
+    de ``min_validas``, cai-se para o teste exacto de Fisher (2×2) com aviso,
+    em vez de reportar um p com resolução muito inferior ao ``n_perm`` nominal.
+    """
     if tab.shape[0] < 2 or tab.shape[1] < 2:
         return {"metodo": "inaplicavel", "p": float("nan"),
-                "estatistica": "", "cramer_v": float("nan")}
+                "estatistica": "", "cramer_v": float("nan"),
+                "n_validas": 0}
     chi2, p_asym, gl, esperado = stats.chi2_contingency(tab.values)
     v = cramers_v(tab)
     if (esperado < 5).any():
-        # Monte Carlo sob independencia (reamostragem da margem)
         rng = np.random.default_rng(semente)
         obs = tab.values
-        n = obs.sum()
+        n = int(obs.sum())
         rprop = obs.sum(1) / n
         cprop = obs.sum(0) / n
         estat = chi2
         maiores = 0
         validas = 0
-        # Em corpora minúsculos o multinomial pode produzir tabela com
-        # margem nula → chi2_contingency falha (expected zero). Reamostrar
-        # (saltar) essas simulações e usar só o número efectivo de draws
-        # válidos no denominador — não deflacionar p com χ²=0.
         max_tentativas = max(n_perm * 20, n_perm + 100)
         tentativas = 0
         while validas < n_perm and tentativas < max_tentativas:
@@ -235,11 +238,31 @@ def teste_contingencia(tab: pd.DataFrame, n_perm: int = 20000, semente=20260725)
             validas += 1
             if c2 >= estat - 1e-12:
                 maiores += 1
+
+        # Poucas sims válidas → Fisher exacto em tabelas 2×2 (resolução honesta)
+        if validas < min_validas and obs.shape == (2, 2):
+            p_fish = float(stats.fisher_exact(obs).pvalue)
+            print(
+                f"AVISO: teste_contingencia — só {validas} sims MC válidas "
+                f"(pedido {n_perm}); a usar Fisher exacto.",
+                flush=True,
+            )
+            return {
+                "metodo": (
+                    f"Fisher exacto (fallback; {validas} MC validas/"
+                    f"{tentativas} tentativas < {min_validas})"
+                ),
+                "p": p_fish,
+                "estatistica": f"χ²({gl}) = {chi2:.3f}; Fisher",
+                "cramer_v": round(v, 4),
+                "n_validas": validas,
+            }
         if validas == 0:
             return {"metodo": "Monte Carlo (inaplicavel: 0 sims validas)",
                     "p": float("nan"),
                     "estatistica": f"χ²({gl}) = {chi2:.3f}",
-                    "cramer_v": round(v, 4)}
+                    "cramer_v": round(v, 4),
+                    "n_validas": 0}
         p = (maiores + 1) / (validas + 1)
         metodo = (
             f"Monte Carlo ({validas} perm. validas/{tentativas} tentativas; "
@@ -247,10 +270,12 @@ def teste_contingencia(tab: pd.DataFrame, n_perm: int = 20000, semente=20260725)
         )
         return {"metodo": metodo, "p": p,
                 "estatistica": f"χ²({gl}) = {chi2:.3f}",
-                "cramer_v": round(v, 4)}
+                "cramer_v": round(v, 4),
+                "n_validas": validas}
     return {"metodo": "χ² assintotico", "p": p_asym,
             "estatistica": f"χ²({gl}) = {chi2:.3f}",
-            "cramer_v": round(v, 4)}
+            "cramer_v": round(v, 4),
+            "n_validas": None}
 
 
 def logdice(o11: int, o12: int, n_janelas_no: int) -> float:

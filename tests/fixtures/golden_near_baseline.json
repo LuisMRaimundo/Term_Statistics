@@ -1,8 +1,8 @@
 {
   "near_wall_seconds": 9.148,
-  "n_hits": 26,
+  "n_hits": 27,
   "n_nuclear": 21,
-  "n_non_nuclear": 5,
+  "n_non_nuclear": 6,
   "python": "3.10.11",
-  "note": "Phase-0 baseline on Desktop workstation; Phase-1 ±20% budget"
+  "note": "Machine-local wall-clock only (pytest -m local_perf). Not enforced in CI."
 }
