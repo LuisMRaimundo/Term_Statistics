@@ -2199,13 +2199,26 @@ def main() -> int:
             "eixo": "homogeneidade_sincronica,invariancia_diacronica,ambos,",
             "negado": "nao,directo,indirecto",
         }
+        # Sombrear apenas linhas ainda nao revistas: a marca amarela e um
+        # convite a edicao, pelo que desaparece quando revisto_por_humano
+        # esta preenchido — evita ruido visual apos a revisao.
+        j_rev = (cab.index("revisto_por_humano") + 1
+                 if "revisto_por_humano" in cab else None)
+
+        def _linha_por_rever(r: int) -> bool:
+            if j_rev is None:
+                return True
+            v = wsc.cell(row=r, column=j_rev).value
+            return v is None or str(v).strip() == ""
+
         for col_nome, lista in editaveis.items():
             if col_nome not in cab:
                 continue
             j = cab.index(col_nome) + 1
             letra = get_column_letter(j)
             for r in range(2, wsc.max_row + 1):
-                wsc.cell(row=r, column=j).fill = amarelo
+                if _linha_por_rever(r):
+                    wsc.cell(row=r, column=j).fill = amarelo
             dv = DataValidation(type="list", formula1=f'"{lista}"',
                                 allow_blank=True)
             dv.error = "Valor fora da taxonomia"
@@ -2218,7 +2231,8 @@ def main() -> int:
             if col_nome in cab:
                 j = cab.index(col_nome) + 1
                 for r in range(2, wsc.max_row + 1):
-                    wsc.cell(row=r, column=j).fill = amarelo
+                    if _linha_por_rever(r):
+                        wsc.cell(row=r, column=j).fill = amarelo
         wb.save(args.saida)
     except Exception as exc:
         print(f"      AVISO: validacao Excel nao aplicada ({exc})", flush=True)
