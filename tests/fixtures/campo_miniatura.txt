@@ -1,0 +1,21 @@
+# Campo lexical da matriz miniatura (golden E2E).
+# Inclui *uniform para cobrir di-uniform; combination/complex/blend
+# para os casos de coordenação e associação heterogénea.
+uniform : estabilidade = uniform*, *uniform
+homogeneous : estabilidade = homogene*, homogenous
+continuous : estabilidade = continuous, continuum
+constant : estabilidade = constant*
+consistent : estabilidade = consisten*
+regular : estabilidade = regular*
+stable : estabilidade = stab*
+sustained : estabilidade = sustain*
+static : estabilidade = static, stasis
+immutable : estabilidade = immutab*
+unchanging : estabilidade = unchanging, unchanged
+varied : variabilidade = varied, variety, variet*
+varying : variabilidade = varying, variab*
+changing : variabilidade = changing, changeab*
+irregular : variabilidade = irregular*
+combination = combination*
+complex = complex*
+blend = blend*, blended, combined

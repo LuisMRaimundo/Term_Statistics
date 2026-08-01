@@ -221,7 +221,13 @@ def teste_contingencia(tab: pd.DataFrame, n_perm: int = 20000, semente=20260725)
             # gerar tabela com margens aproximadas
             flat = rng.multinomial(n, np.outer(rprop, cprop).ravel())
             sim = flat.reshape(obs.shape)
-            c2 = stats.chi2_contingency(sim, correction=False)[0]
+            # Em corpora minúsculos o multinomial pode produzir uma tabela
+            # com margem nula → chi2_contingency falha (expected zero).
+            # Contar como χ²=0 (não mais extrema) em vez de abortar a fase 2.
+            try:
+                c2 = stats.chi2_contingency(sim, correction=False)[0]
+            except ValueError:
+                c2 = 0.0
             if c2 >= estat - 1e-12:
                 maiores += 1
         p = (maiores + 1) / (n_perm + 1)

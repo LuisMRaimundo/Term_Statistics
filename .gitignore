@@ -10,3 +10,6 @@ venv/
 Thumbs.db
 # Preferências locais da GUI (títulos dos gráficos)
 legendas_defeito.json
+# Artefactos de sonda / gráficos gerados sob fixtures
+tests/fixtures/_probe_*
+tests/fixtures/_g_*

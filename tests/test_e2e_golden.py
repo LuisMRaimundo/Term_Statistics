@@ -1,0 +1,217 @@
+# -*- coding: utf-8 -*-
+"""Golden-master E2E: matriz_miniatura → near.xlsx → análise → DOCX.
+
+Locks sheet names, ``8_Concordancia`` column order, nuclear counts,
+duplicate-tag families, association OR for ``homogeneous``, and appendix
+table row count. Any behavioural change in extraction/classification
+must update these expectations with an explicit justification.
+"""
+
+from __future__ import annotations
+
+import re
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+import pandas as pd
+import pytest
+from docx import Document
+
+ROOT = Path(__file__).resolve().parents[1]
+FIXTURES = Path(__file__).resolve().parent / "fixtures"
+MATRIZ = FIXTURES / "matriz_miniatura.xlsx"
+CAMPO = FIXTURES / "campo_miniatura.txt"
+
+SHEETS_NEAR = [
+    "0_Instrucoes",
+    "Config_lexico",
+    "Manifesto_corpus",
+    "8_Concordancia",
+    "8_Concordancia_Hits",
+    "8_Concordancia_Ocorrencias",
+    "9_Excluidas",
+    "Duplicados",
+]
+
+COLS_CONCORDANCIA = [
+    "source_matrix_row", "texture_occurrence_id", "match_id", "hit_key",
+    "grupo_passagem_id", "candidato_duplicado",
+    "no", "termo_tipo", "canonical_term", "query_pattern",
+    "termo_forma", "matched_form", "n_palavras", "distancia", "lado",
+    "negado", "graduado", "modalizado", "relacao_sintactica",
+    "polaridade_base", "polaridade", "eixo",
+    "censurado_esq", "censurado_dir",
+    "idx_no", "idx_termo", "off_no", "off_termo",
+    "n_nos_janela", "forma_em_composto",
+    "caminho_ficheiro", "doc_id", "url", "contexto",
+    "motivo_exclusao", "nuclear", "fonte_classificacao",
+    "n_janelas_fundidas", "revisao_sugerida",
+    "nucleo_da_propriedade", "orientacao", "governante", "percurso_dep",
+    "dominio", "dominio_janela", "revisto_por_humano", "nota_revisao",
+]
+
+# Captured from Phase-0 baseline run (en_core_web_sm + campo_miniatura).
+N_HITS = 26
+N_NUCLEAR = 20
+N_NON_NUCLEAR = 6
+OR_HOMOGENEOUS = 9.099
+N_APENDICE_DATA_ROWS = 20
+
+RX_C = re.compile(r"citacao_entre_doc_ids:C\d{4}")
+RX_P = re.compile(r"passagem_sobreposta:P\d{4}")
+RX_J = re.compile(r"janela_sobreposta:J\d{4}")
+
+
+def _run(args: list[str], *, cwd: Path = ROOT) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        [sys.executable, *args],
+        cwd=str(cwd),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+
+
+def _truthy_nuclear(s: pd.Series) -> pd.Series:
+    return s.map(
+        lambda v: v is True or str(v).strip().lower() in {"true", "1", "sim"}
+    )
+
+
+@pytest.fixture(scope="module")
+def near_xlsx(tmp_path_factory) -> Path:
+    assert MATRIZ.is_file(), f"missing fixture {MATRIZ}"
+    assert CAMPO.is_file(), f"missing fixture {CAMPO}"
+    out_dir = tmp_path_factory.mktemp("golden_near")
+    out = out_dir / "golden_near.xlsx"
+    t0 = time.perf_counter()
+    proc = _run([
+        "textura_near.py",
+        "--xlsx", str(MATRIZ),
+        "--saida", str(out),
+        "--near", "4",
+        "--lingua", "todas",
+        "--termos", str(CAMPO),
+        "--dominio-omissao", "musicologia",
+    ])
+    elapsed = time.perf_counter() - t0
+    assert proc.returncode == 0, (
+        f"textura_near failed ({proc.returncode})\n"
+        f"STDOUT:\n{proc.stdout}\nSTDERR:\n{proc.stderr}"
+    )
+    assert out.is_file()
+    # baseline timing breadcrumb for Phase-1 ±20% check
+    (out_dir / "near_seconds.txt").write_text(
+        f"{elapsed:.3f}\n", encoding="utf-8")
+    return out
+
+
+@pytest.fixture(scope="module")
+def analise_xlsx(near_xlsx: Path, tmp_path_factory) -> Path:
+    out_dir = tmp_path_factory.mktemp("golden_analise")
+    out = out_dir / "golden_analise.xlsx"
+    proc = _run([
+        "textura_analise.py",
+        "--xlsx", str(near_xlsx),
+        "--saida", str(out),
+    ])
+    assert proc.returncode == 0, (
+        f"textura_analise failed ({proc.returncode})\n"
+        f"STDOUT:\n{proc.stdout}\nSTDERR:\n{proc.stderr}"
+    )
+    assert out.is_file()
+    return out
+
+
+@pytest.fixture(scope="module")
+def apendice_docx(analise_xlsx: Path, tmp_path_factory) -> Path:
+    out_dir = tmp_path_factory.mktemp("golden_apendice")
+    out = out_dir / "golden_apendice.docx"
+    proc = _run([
+        "textura_apendice.py",
+        "--xlsx", str(analise_xlsx),
+        "--saida", str(out),
+        "--no-paginas-pdf",
+    ])
+    assert proc.returncode == 0, (
+        f"textura_apendice failed ({proc.returncode})\n"
+        f"STDOUT:\n{proc.stdout}\nSTDERR:\n{proc.stderr}"
+    )
+    assert out.is_file()
+    return out
+
+
+class TestNearGolden:
+    def test_exit_and_sheets(self, near_xlsx: Path):
+        sheets = pd.ExcelFile(near_xlsx).sheet_names
+        assert sheets == SHEETS_NEAR
+
+    def test_concordancia_columns(self, near_xlsx: Path):
+        df = pd.read_excel(near_xlsx, sheet_name="8_Concordancia")
+        assert list(df.columns) == COLS_CONCORDANCIA
+        assert "dominio_janela" in df.columns
+        assert "revisao_sugerida" in df.columns
+
+    def test_nuclear_counts(self, near_xlsx: Path):
+        df = pd.read_excel(near_xlsx, sheet_name="8_Concordancia")
+        nuc = _truthy_nuclear(df["nuclear"])
+        assert len(df) == N_HITS
+        assert int(nuc.sum()) == N_NUCLEAR
+        assert int((~nuc).sum()) == N_NON_NUCLEAR
+
+    def test_motivo_on_non_nuclear(self, near_xlsx: Path):
+        df = pd.read_excel(near_xlsx, sheet_name="8_Concordancia")
+        non = df.loc[~_truthy_nuclear(df["nuclear"])]
+        vazios = non["motivo_exclusao"].fillna("").astype(str).str.strip().eq("")
+        assert int(vazios.sum()) == 0, non.loc[
+            vazios, ["matched_form", "motivo_exclusao"]
+        ].to_string()
+
+    def test_duplicate_tag_families(self, near_xlsx: Path):
+        df = pd.read_excel(near_xlsx, sheet_name="8_Concordancia")
+        blob = " | ".join(df["candidato_duplicado"].fillna("").astype(str))
+        assert RX_C.search(blob), "missing citacao_entre_doc_ids:C####"
+        assert RX_P.search(blob), "missing passagem_sobreposta:P####"
+        assert RX_J.search(blob), "missing janela_sobreposta:J####"
+        # stable first-group ids on this fixture
+        assert "C0001" in blob
+        assert "P0001" in blob
+        assert "J0001" in blob
+
+    def test_signals_present(self, near_xlsx: Path):
+        df = pd.read_excel(near_xlsx, sheet_name="8_Concordancia")
+        rev = df["revisao_sugerida"].fillna("").astype(str)
+        assert rev.str.contains("coordenacao_heterogenea").any()
+        dom = df["dominio_janela"].fillna("").astype(str)
+        assert (dom == "geologia").any()
+        # di-uniform extracted (campo includes *uniform)
+        forms = df["matched_form"].astype(str).str.lower()
+        assert forms.eq("di-uniform").any()
+
+
+class TestAnaliseGolden:
+    def test_associacao_sheet_and_or(self, analise_xlsx: Path):
+        sheets = pd.ExcelFile(analise_xlsx).sheet_names
+        assert "9_Associacao" in sheets
+        assert "1_Resumo" in sheets
+        assoc = pd.read_excel(
+            analise_xlsx, sheet_name="9_Associacao", header=3)
+        assert "razao_possib" in assoc.columns
+        assert "canonical_term" in assoc.columns
+        sub = assoc.loc[
+            assoc["canonical_term"].astype(str) == "homogeneous",
+            "razao_possib",
+        ]
+        assert len(sub) == 1
+        assert round(float(sub.iloc[0]), 3) == OR_HOMOGENEOUS
+
+
+class TestApendiceGolden:
+    def test_docx_table_rows(self, apendice_docx: Path):
+        doc = Document(str(apendice_docx))
+        assert doc.tables, "expected at least one table"
+        data_rows = sum(max(0, len(t.rows) - 1) for t in doc.tables)
+        assert data_rows == N_APENDICE_DATA_ROWS
