@@ -4,3 +4,5 @@
 # (EN + PT) and note the change in the changelog / commit message.
 # See TECHNICAL_MANUAL.md §11 «spaCy model pinning».
 spacy==3.8.7
+click==8.1.8
+pandas>=2.2,<3

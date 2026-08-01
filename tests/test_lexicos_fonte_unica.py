@@ -307,7 +307,9 @@ class TestLexicoLiveOnMiniature(unittest.TestCase):
         )
         ctx = None
         for col in df.columns:
-            for val in df[col].astype(str):
+            for val in df[col].tolist():
+                if not isinstance(val, str):
+                    continue
                 if "bioclast" in val.lower():
                     ctx = val
                     break
