@@ -57,9 +57,9 @@ Consumidores reexportam (sem literais). Aceitação:
 
 | Situação | Comportamento |
 |---|---|
-| Só raiz com regras | Usa raiz + `DeprecationWarning` (nomeia `dados/lexicos/dominios_path.tsv`) |
+| Só raiz com regras | Usa raiz + `AVISO` em **stderr** (visível sob filtros por omissão) |
 | Só canónico | Usa `dados/lexicos/dominios_path.tsv` |
-| Ambos idênticos | Usa canónico + aviso para remover a raiz |
+| Ambos idênticos | Usa canónico + `AVISO` stderr para remover a raiz |
 | Ambos diferem | `LexicoError` — migração consciente obrigatória |
 
 A raiz enviada no repositório é **só comentários** (sem regras), para não

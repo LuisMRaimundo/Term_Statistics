@@ -1,0 +1,30 @@
+{
+  "spacy_model": "pt_core_news_sm",
+  "spacy_model_version": "3.8.0",
+  "lingua": "pt",
+  "n_hits": 3,
+  "n_nuclear": 3,
+  "rows": [
+    {
+      "no": "textura",
+      "termo_tipo": "homogeneous",
+      "matched_form": "homogenea",
+      "relacao_sintactica": "atributiva",
+      "nuclear": true
+    },
+    {
+      "no": "textura",
+      "termo_tipo": "uniform",
+      "matched_form": "uniforme",
+      "relacao_sintactica": "atributiva",
+      "nuclear": true
+    },
+    {
+      "no": "texturas",
+      "termo_tipo": "constant",
+      "matched_form": "constantes",
+      "relacao_sintactica": "atributiva",
+      "nuclear": true
+    }
+  ]
+}

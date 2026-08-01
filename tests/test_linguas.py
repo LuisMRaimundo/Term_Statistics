@@ -33,6 +33,10 @@ class TestRegistoLinguas(unittest.TestCase):
         self.assertEqual(ex.cfg.codigo, "en")
         self.assertEqual(ex.modelo_spacy, "en_core_web_sm")
         self.assertIn("sem detecção de língua por linha", ex.aviso)
+        self.assertIn(
+            "janelas não-EN classificadas com modelo/preposições EN",
+            ex.aviso,
+        )
 
     def test_pt_resolves_pt_model(self):
         ex = resolver_execucao("pt", None)

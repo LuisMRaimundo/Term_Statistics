@@ -11,7 +11,7 @@ Caminhos ancoram-se à raiz do projecto (pasta-mãe de ``textura/``), nunca ao C
 from __future__ import annotations
 
 import re
-import warnings
+import sys
 from functools import lru_cache
 from pathlib import Path
 from typing import Dict, FrozenSet, Mapping, Tuple
@@ -74,11 +74,15 @@ def caminho_dominios_path(
 ) -> Path:
     """Resolve o TSV path→domínio com precedência explícita.
 
-    1. Só raiz ``dominios.tsv`` (com regras) → usa raiz + DeprecationWarning.
+    1. Só raiz ``dominios.tsv`` (com regras) → usa raiz + aviso stderr.
     2. Só ``dados/lexicos/dominios_path.tsv`` → usa canónico.
     3. Ambos com o mesmo conteúdo normativo → canónico; avisa para remover a raiz.
     4. Ambos com conteúdo diferente → ``LexicoError`` (migração consciente).
     5. Nenhum com regras → devolve o canónico (o chamador trata ficheiro em falta).
+
+    Avisos vão para stderr (não ``DeprecationWarning``): o filtro por omissão
+    do Python esconde DeprecationWarning fora do pytest, e o investigador com
+    ``dominios.tsv`` personalizado na raiz é quem mais precisa de os ver.
     """
     raiz = Path(raiz) if raiz is not None else _RAIZ_PROJECTO / "dominios.tsv"
     canon = (
@@ -97,21 +101,19 @@ def caminho_dominios_path(
                 f"alinhe o ficheiro na raiz — não há escolha silenciosa."
             )
         if avisar:
-            warnings.warn(
-                f"{raiz} é um duplicado obsoleto de {canon}; "
+            print(
+                f"AVISO: {raiz} é um duplicado obsoleto de {canon}; "
                 f"remova o ficheiro na raiz (o pipeline usa o canónico).",
-                DeprecationWarning,
-                stacklevel=2,
+                file=sys.stderr,
             )
         return canon
 
     if regras_raiz:
         if avisar:
-            warnings.warn(
-                f"A usar {raiz} (legado). Migre as regras para {canon} "
+            print(
+                f"AVISO: a usar {raiz} (legado). Migre as regras para {canon} "
                 f"e remova o ficheiro na raiz.",
-                DeprecationWarning,
-                stacklevel=2,
+                file=sys.stderr,
             )
         return raiz
 

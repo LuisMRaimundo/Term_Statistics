@@ -1,0 +1,14 @@
+# Phase-4 CI gate: catch real mistakes without reformatting the research
+# codebase. Re-export shims and dense legacy helpers are out of scope here.
+target-version = "py310"
+line-length = 100
+
+[lint]
+select = ["E", "F"]
+ignore = [
+    "E501",  # line length
+    "E702",  # semicolon-dense legacy lines
+    "E731",  # lambda in fixture builders
+    "F401",  # unused import (many intentional re-exports)
+    "F841",  # unused local (deferred cleanup)
+]

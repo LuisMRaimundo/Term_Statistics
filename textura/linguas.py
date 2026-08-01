@@ -164,7 +164,8 @@ def resolver_execucao(
         avisos.append(
             "lingua=todas: paradigmas NOS unidos; modelo spaCy e "
             "preposições genitivas ao nível da execução (en) — "
-            "sem detecção de língua por linha."
+            "sem detecção de língua por linha. "
+            "modo todas: janelas não-EN classificadas com modelo/preposições EN."
         )
     else:
         cfg = obter(lingua)

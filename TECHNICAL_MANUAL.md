@@ -721,11 +721,44 @@ python textura_apendice.py --xlsx UNIFORME_near.xlsx --refs refs_apa7.xlsx
 | Topic | Statement |
 |---|---|
 | RNG seeds | Monte Carlo / bootstrap use fixed seeds (`20260724`, `20260725`) unless changed |
-| spaCy model | Default `en_core_web_sm`; results depend on model version |
+| spaCy model | See **spaCy model pinning** below |
 | Matrix truncation | Contexts are short; `censurado_esq/dir` mark missing evidence |
 | Band baseline | Positional, not whole-corpus keyness |
 | Page labels | Many PDFs lack `/PageLabels` → only `(PDF p. N)` is honest |
 | Human review | Required for publishable nuclear sets |
+| DOCX appendix | Built with `python-docx` only (`--no-paginas-pdf` in CI); no Microsoft Office runtime |
+
+### spaCy model pinning (scientific reproducibility)
+
+`relacao_sintactica` (and therefore nuclear counts in the dissertation) is a
+function of the **exact** spaCy model weights, not only of this repository’s
+Python. A minor model release (e.g. `en_core_web_sm` 3.8.0 → 3.9.x) can change
+a parse and break golden assertions without any intentional code change.
+
+**Policy**
+
+1. CI and the documented research environment install models by **pinned wheel
+   URL** (currently `en_core_web_sm-3.8.0` and `pt_core_news_sm-3.8.0` from the
+   [explosion/spacy-models](https://github.com/explosion/spacy-models) releases),
+   never via unversioned `python -m spacy download …`.
+2. `constraints.txt` pins `spacy==3.8.7` inside the models’ declared band
+   (`>=3.8.0,<3.9.0`).
+3. A **model or spaCy bump is a deliberate event**: regenerate the EN golden
+   (`tests/test_e2e_golden.py`) and the PT golden
+   (`tests/test_e2e_golden_pt.py` / `fixtures/golden_pt_near.json`), update the
+   wheel URLs in `.github/workflows/ci.yml`, and record the change in the
+   commit message / changelog. Dissertation counts that depend on the old
+   model must be re-audited.
+4. Language is chosen at **run level** (`--lingua`). Mode `todas` unions NOS
+   paradigms but still classifies with EN model/prepositions — the CLI logs
+   this limitation explicitly.
+
+### Path→domain configuration
+
+Default rules live in `dados/lexicos/dominios_path.tsv`. A non-empty root
+`dominios.tsv` is legacy: the CLI prints an `AVISO` on stderr (visible under
+default Python warning filters). Conflicting root vs canonical files raise
+rather than choosing silently.
 
 ---
 

@@ -3,11 +3,12 @@
 
 from __future__ import annotations
 
+import contextlib
+import io
 import os
 import shutil
 import tempfile
 import unittest
-import warnings
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -133,7 +134,7 @@ class TestLexicosFonteUnica(unittest.TestCase):
             "literal lexicon redefinitions:\n" + "\n".join(offenders),
         )
 
-    def test_dominios_precedence_root_only_wins_with_deprecation(self):
+    def test_dominios_precedence_root_only_wins_with_stderr_aviso(self):
         from textura import lexico as lx
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -143,20 +144,16 @@ class TestLexicosFonteUnica(unittest.TestCase):
             raiz.write_text(
                 "# custom\n(?i)meu_corpus\tmusicologia\n", encoding="utf-8"
             )
-            with warnings.catch_warnings(record=True) as caught:
-                warnings.simplefilter("always")
+            buf = io.StringIO()
+            with contextlib.redirect_stderr(buf):
                 path = lx.caminho_dominios_path(
                     raiz=raiz, canon=canon, avisar=True
                 )
+            err = buf.getvalue()
             self.assertEqual(path, raiz)
-            self.assertTrue(
-                any(issubclass(w.category, DeprecationWarning) for w in caught)
-            )
-            self.assertTrue(
-                any("dados/lexicos/dominios_path.tsv" in str(w.message)
-                    or "dominios_path.tsv" in str(w.message)
-                    for w in caught)
-            )
+            self.assertIn("AVISO:", err)
+            self.assertIn("legado", err)
+            self.assertIn("dominios_path.tsv", err)
 
     def test_dominios_precedence_conflict_raises(self):
         from textura import lexico as lx
@@ -183,15 +180,48 @@ class TestLexicosFonteUnica(unittest.TestCase):
             body = "(?i)todos os textos\tmusicologia\n"
             raiz.write_text(body, encoding="utf-8")
             canon.write_text(body, encoding="utf-8")
-            with warnings.catch_warnings(record=True) as caught:
-                warnings.simplefilter("always")
+            buf = io.StringIO()
+            with contextlib.redirect_stderr(buf):
                 path = lx.caminho_dominios_path(
                     raiz=raiz, canon=canon, avisar=True
                 )
+            err = buf.getvalue()
             self.assertEqual(path, canon)
-            self.assertTrue(
-                any(issubclass(w.category, DeprecationWarning) for w in caught)
-            )
+            self.assertIn("AVISO:", err)
+            self.assertIn("duplicado obsoleto", err)
+
+    def test_dominios_aviso_visible_under_default_warning_filters(self):
+        """CLI users must see the notice without enabling DeprecationWarning."""
+        import subprocess
+        import sys
+
+        script = (
+            "import warnings\n"
+            # Default filters (no pytest 'always' for DeprecationWarning)
+            "warnings.resetwarnings()\n"
+            "from pathlib import Path\n"
+            "import tempfile\n"
+            "from textura.lexico import caminho_dominios_path\n"
+            "td = Path(tempfile.mkdtemp())\n"
+            "raiz = td / 'dominios.tsv'\n"
+            "canon = td / 'dominios_path.tsv'\n"
+            "raiz.write_text('(?i)x\\tmusicologia\\n', encoding='utf-8')\n"
+            "caminho_dominios_path(raiz=raiz, canon=canon, avisar=True)\n"
+        )
+        env = os.environ.copy()
+        env["PYTHONPATH"] = str(ROOT)
+        proc = subprocess.run(
+            [sys.executable, "-c", script],
+            cwd=str(ROOT),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=env,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn("AVISO:", proc.stderr)
+        self.assertIn("dominios_path.tsv", proc.stderr)
 
     def test_malformed_tsv_raises_naming_file(self):
         from textura import lexico as lx

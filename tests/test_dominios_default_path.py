@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import unittest
-import warnings
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -15,9 +14,7 @@ class TestDominiosDefaultPath(unittest.TestCase):
         """Canonical path rules live under dados/lexicos/."""
         from textura.lexico import caminho_dominios_path
 
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", DeprecationWarning)
-            cand = caminho_dominios_path()
+        cand = caminho_dominios_path()
         self.assertEqual(cand, ROOT / "dados" / "lexicos" / "dominios_path.tsv")
         self.assertTrue(cand.is_file(), f"expected {cand}")
         self.assertNotEqual(cand.parent.name, "textura")
@@ -34,9 +31,7 @@ class TestDominiosDefaultPath(unittest.TestCase):
         import textura_triagem as ttri
         from textura.lexico import caminho_dominios_path
 
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", DeprecationWarning)
-            regras = ttri.carregar_dominios(caminho_dominios_path())
+        regras = ttri.carregar_dominios(caminho_dominios_path())
         self.assertGreater(len(regras), 0)
         dom = ttri.classificar_dominio(
             r"E:\todos os textos\(2000)_X.pdf", regras)

@@ -1,0 +1,6 @@
+# Pin library versions that affect classification reproducibility.
+# spaCy models declare: >=3.8.0,<3.9.0 — stay inside that band.
+# A model or spaCy minor bump is a deliberate event: regenerate goldens
+# (EN + PT) and note the change in the changelog / commit message.
+# See TECHNICAL_MANUAL.md §11 «spaCy model pinning».
+spacy==3.8.7

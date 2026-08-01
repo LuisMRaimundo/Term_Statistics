@@ -6,8 +6,8 @@
 # Precedência (textura.lexico.caminho_dominios_path):
 # - Se este ficheiro tiver linhas de regras E o canónico também, e o
 #   conteúdo normativo diferir → o pipeline RECUSA arrancar.
-# - Se forem idênticos → usa-se o canónico (DeprecationWarning: remova a raiz).
-# - Se só a raiz tiver regras → a raiz ainda é lida (DeprecationWarning).
+# - Se forem idênticos → usa-se o canónico (AVISO em stderr: remova a raiz).
+# - Se só a raiz tiver regras → a raiz ainda é lida (AVISO em stderr).
 # - Caso contrário → dados/lexicos/dominios_path.tsv.
 #
 # Para personalizar: edite dados/lexicos/dominios_path.tsv (ou, em migração,
