@@ -217,21 +217,34 @@ def teste_contingencia(tab: pd.DataFrame, n_perm: int = 20000, semente=20260725)
         cprop = obs.sum(0) / n
         estat = chi2
         maiores = 0
-        for _ in range(n_perm):
-            # gerar tabela com margens aproximadas
+        validas = 0
+        # Em corpora minúsculos o multinomial pode produzir tabela com
+        # margem nula → chi2_contingency falha (expected zero). Reamostrar
+        # (saltar) essas simulações e usar só o número efectivo de draws
+        # válidos no denominador — não deflacionar p com χ²=0.
+        max_tentativas = max(n_perm * 20, n_perm + 100)
+        tentativas = 0
+        while validas < n_perm and tentativas < max_tentativas:
+            tentativas += 1
             flat = rng.multinomial(n, np.outer(rprop, cprop).ravel())
             sim = flat.reshape(obs.shape)
-            # Em corpora minúsculos o multinomial pode produzir uma tabela
-            # com margem nula → chi2_contingency falha (expected zero).
-            # Contar como χ²=0 (não mais extrema) em vez de abortar a fase 2.
             try:
                 c2 = stats.chi2_contingency(sim, correction=False)[0]
             except ValueError:
-                c2 = 0.0
+                continue
+            validas += 1
             if c2 >= estat - 1e-12:
                 maiores += 1
-        p = (maiores + 1) / (n_perm + 1)
-        metodo = f"Monte Carlo ({n_perm} perm.; celula esperada < 5)"
+        if validas == 0:
+            return {"metodo": "Monte Carlo (inaplicavel: 0 sims validas)",
+                    "p": float("nan"),
+                    "estatistica": f"χ²({gl}) = {chi2:.3f}",
+                    "cramer_v": round(v, 4)}
+        p = (maiores + 1) / (validas + 1)
+        metodo = (
+            f"Monte Carlo ({validas} perm. validas/{tentativas} tentativas; "
+            f"celula esperada < 5)"
+        )
         return {"metodo": metodo, "p": p,
                 "estatistica": f"χ²({gl}) = {chi2:.3f}",
                 "cramer_v": round(v, 4)}

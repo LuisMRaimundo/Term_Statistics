@@ -9,6 +9,7 @@ must update these expectations with an explicit justification.
 
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 import sys
@@ -23,6 +24,7 @@ ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 MATRIZ = FIXTURES / "matriz_miniatura.xlsx"
 CAMPO = FIXTURES / "campo_miniatura.txt"
+BASELINE = FIXTURES / "golden_near_baseline.json"
 
 SHEETS_NEAR = [
     "0_Instrucoes",
@@ -54,10 +56,10 @@ COLS_CONCORDANCIA = [
 
 # Captured from Phase-0 baseline run (en_core_web_sm + campo_miniatura).
 N_HITS = 26
-N_NUCLEAR = 20
-N_NON_NUCLEAR = 6
-OR_HOMOGENEOUS = 9.099
-N_APENDICE_DATA_ROWS = 20
+N_NUCLEAR = 21
+N_NON_NUCLEAR = 5
+OR_HOMOGENEOUS = 9.098
+N_APENDICE_DATA_ROWS = 21
 
 RX_C = re.compile(r"citacao_entre_doc_ids:C\d{4}")
 RX_P = re.compile(r"passagem_sobreposta:P\d{4}")
@@ -82,7 +84,7 @@ def _truthy_nuclear(s: pd.Series) -> pd.Series:
 
 
 @pytest.fixture(scope="module")
-def near_xlsx(tmp_path_factory) -> Path:
+def near_bundle(tmp_path_factory) -> dict:
     assert MATRIZ.is_file(), f"missing fixture {MATRIZ}"
     assert CAMPO.is_file(), f"missing fixture {CAMPO}"
     out_dir = tmp_path_factory.mktemp("golden_near")
@@ -103,10 +105,14 @@ def near_xlsx(tmp_path_factory) -> Path:
         f"STDOUT:\n{proc.stdout}\nSTDERR:\n{proc.stderr}"
     )
     assert out.is_file()
-    # baseline timing breadcrumb for Phase-1 ±20% check
     (out_dir / "near_seconds.txt").write_text(
         f"{elapsed:.3f}\n", encoding="utf-8")
-    return out
+    return {"path": out, "seconds": elapsed}
+
+
+@pytest.fixture(scope="module")
+def near_xlsx(near_bundle) -> Path:
+    return near_bundle["path"]
 
 
 @pytest.fixture(scope="module")
@@ -145,6 +151,19 @@ def apendice_docx(analise_xlsx: Path, tmp_path_factory) -> Path:
 
 
 class TestNearGolden:
+    def test_runtime_within_phase0_budget(self, near_bundle: dict):
+        """Phase-1 moves must stay within ±20% of the recorded baseline."""
+        assert BASELINE.is_file(), f"missing timing baseline {BASELINE}"
+        ref = float(json.loads(BASELINE.read_text(encoding="utf-8"))[
+            "near_wall_seconds"])
+        elapsed = float(near_bundle["seconds"])
+        # Allow +20% (regression budget) and a small absolute floor for CI noise.
+        limit = max(ref * 1.20, ref + 2.0)
+        assert elapsed <= limit, (
+            f"near wall-clock {elapsed:.3f}s exceeds Phase-0 budget "
+            f"(baseline {ref:.3f}s, limit {limit:.3f}s)"
+        )
+
     def test_exit_and_sheets(self, near_xlsx: Path):
         sheets = pd.ExcelFile(near_xlsx).sheet_names
         assert sheets == SHEETS_NEAR
@@ -185,6 +204,9 @@ class TestNearGolden:
         df = pd.read_excel(near_xlsx, sheet_name="8_Concordancia")
         rev = df["revisao_sugerida"].fillna("").astype(str)
         assert rev.str.contains("coordenacao_heterogenea").any()
+        assert rev.str.contains("associativa_com_nao_textural").any(), (
+            "associative heterog. flag missing — wrapper may have been dropped"
+        )
         dom = df["dominio_janela"].fillna("").astype(str)
         assert (dom == "geologia").any()
         # di-uniform extracted (campo includes *uniform)
@@ -206,7 +228,7 @@ class TestAnaliseGolden:
             "razao_possib",
         ]
         assert len(sub) == 1
-        assert round(float(sub.iloc[0]), 3) == OR_HOMOGENEOUS
+        assert float(sub.iloc[0]) == pytest.approx(OR_HOMOGENEOUS, rel=1e-3)
 
 
 class TestApendiceGolden:

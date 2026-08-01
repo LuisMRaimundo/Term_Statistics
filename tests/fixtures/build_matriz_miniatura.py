@@ -59,9 +59,10 @@ def build_rows() -> list[list]:
         "the combination of texture and dynamics was clear in the final "
         "cadence of the work",
         r"E:\todos os textos\(2001)_Cadence.pdf")
+    # Empirically nuclear + associativa_com_nao_textural under en_core_web_sm
     add("textures",
-        "the guitar textures combined with the lyrics of the singer "
-        "created a dense surface",
+        "the combination of textures with the lyrics was striking "
+        "in the final refrain of the song",
         r"E:\todos os textos\(2005)_Song.pdf")
     add("texture",
         "the voices are combined into a homophonic texture of unusual "
