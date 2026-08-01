@@ -30,6 +30,7 @@ from textura.duplicados import (
 )
 from textura.exportacao import reordenar_colunas_hits
 from textura.lexico import caminho_dominios_path, dominio_janela
+from textura.linguas import CODIGOS as LINGUAS_CODIGOS, resolver_execucao
 from textura.relacoes import anota_com_heuristica, anota_com_spacy
 from textura.tokenizacao import (
     _Consulta, anota_sintaxe, compila_campo, emparelha_contexto, fronteiras_frase, indices_no, normaliza,
@@ -60,7 +61,12 @@ def main() -> int:
     ap.add_argument("--xlsx", required=True, type=Path)
     ap.add_argument("--folha", default="Neighbor Contexts")
     ap.add_argument("--near", type=int, default=4)
-    ap.add_argument("--lingua", default="en", choices=list(NOS) + ["todas"])
+    ap.add_argument(
+        "--lingua", default="en",
+        choices=sorted(set(LINGUAS_CODIGOS) | set(NOS)) + ["todas"],
+        help="língua da execução (paradigmas NOS + modelo spaCy do registo); "
+             "'todas' une NOS mas mantém modelo/preps ao nível en",
+    )
     ap.add_argument("--limite", type=int, default=None,
                     help="processar apenas as N primeiras linhas (teste)")
     ap.add_argument("--sem-fronteira", action="store_true",
@@ -88,8 +94,11 @@ def main() -> int:
                     choices=["heuristica", "spacy"],
                     help="método de identificação da relação sintáctica "
                          "(omissão: spacy; use heuristica para comparação)")
-    ap.add_argument("--modelo", default="en_core_web_sm",
-                    help="modelo spaCy (en_core_web_sm, pt_core_news_sm, ...)")
+    ap.add_argument(
+        "--modelo", default=None,
+        help="modelo spaCy (omissão: o do registo para --lingua, "
+             "ex. en_core_web_sm / pt_core_news_sm)",
+    )
     ap.add_argument("--incluir-nao-nucleares", action="store_true",
                     help="não filtrar a estatística por nuclear=True")
     ap.add_argument("--inverter-polaridade-negada", action="store_true",
@@ -129,6 +138,16 @@ def main() -> int:
         args.so_extrair = False
     if args.sem_revisao:
         args.so_extrair = False
+
+    exec_ling = resolver_execucao(args.lingua, args.modelo)
+    args.modelo = exec_ling.modelo_spacy
+    if exec_ling.aviso:
+        print(f"      {exec_ling.aviso}", flush=True)
+    print(
+        f"      língua efectiva={exec_ling.cfg.codigo} "
+        f"modelo={args.modelo} status={exec_ling.cfg.status}",
+        flush=True,
+    )
 
     campo = dict(CAMPO)
     if args.termos:
@@ -337,7 +356,21 @@ def main() -> int:
 
     if args.sintaxe == "spacy":
         print("[2b/5] Analise de dependencias (spaCy) ...", flush=True)
-        res = anota_com_spacy(res, args.modelo, obrigatorio=True)
+        # Modelo em falta: EN permanece obrigatório; outras línguas degradam
+        # para heurística com aviso (sem inventar língua por linha).
+        obrig = exec_ling.cfg.codigo == "en"
+        res = anota_com_spacy(
+            res, args.modelo,
+            obrigatorio=obrig,
+            preps_genitivo=exec_ling.cfg.preps_genitivo,
+            preps_associativa=exec_ling.cfg.preps_associativa,
+        )
+        if res["fonte_classificacao"].eq("heuristica").all() and not obrig:
+            print(
+                f"AVISO: modelo '{args.modelo}' indisponível — "
+                f"classificação heurística para lingua={exec_ling.cfg.codigo}.",
+                flush=True,
+            )
     else:
         print("[2b/5] Classificacao heuristica ...", flush=True)
         res = anota_com_heuristica(res)

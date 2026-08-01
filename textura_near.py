@@ -79,6 +79,14 @@ from textura.lexico import (  # noqa: F401
     dominio_janela,
 )
 
+# --- language registry (Phase 3) -----------------------------------------
+from textura.linguas import (  # noqa: F401
+    CODIGOS as LINGUAS_CODIGOS,
+    REGISTO as LINGUAS,
+    obter as lingua_obter,
+    resolver_execucao,
+)
+
 # --- statistics -----------------------------------------------------------
 from textura.estatistica import (  # noqa: F401
     POLO_ESTABILIDADE,

@@ -275,8 +275,6 @@ class TestLexicoLiveOnMiniature(unittest.TestCase):
             ROOT / "tests" / "fixtures" / "matriz_miniatura.xlsx",
             header=None,
         )
-        ctx_col = df.shape[1] - 2  # caminho, url, raiz, contexto, n — ctx≈14
-        # Prefer the column that actually contains the geology sentence
         ctx = None
         for col in df.columns:
             for val in df[col].astype(str):

@@ -73,15 +73,21 @@ def _gov_efectivo(tok) -> str:
     return h.text
 
 
-def _tem_complemento_genitivo(termo, t_no) -> bool:
+_PREPS_GENITIVO_OMISSAO = frozenset({"of", "de", "in", "on"})
+_PREPS_ASSOC_OMISSAO = frozenset({"with"})
+
+
+def _tem_complemento_genitivo(
+    termo, t_no, preps_genitivo: frozenset[str] | None = None,
+) -> bool:
     """True se T rege prep cujo objecto é N (qualquer papel de T)."""
+    preps = preps_genitivo if preps_genitivo is not None else _PREPS_GENITIVO_OMISSAO
     base = termo
     while base.dep_ == "conj" and base.head.i != base.i:
         base = base.head
     for node in (termo, base):
         for child in node.children:
-            if child.dep_ == "prep" and child.text.lower() in {
-                    "of", "de", "in", "on"}:
+            if child.dep_ == "prep" and child.text.lower() in preps:
                 for gc in child.children:
                     if gc.dep_ in ("pobj", "nmod") and _no_no_subtree(
                             gc, t_no):
@@ -149,15 +155,21 @@ def _coordenacao_heterogenea(t_no) -> str:
     return ""
 
 
-def _associativa_heterogenea(t_te, t_no) -> str:
-    """T rege prep 'with' cujo objecto é nome não textural, estando N
+def _associativa_heterogenea(
+    t_te, t_no, preps_associativa: frozenset[str] | None = None,
+) -> str:
+    """T rege prep associativa cujo objecto é nome não textural, estando N
     fora desse complemento ('textures combined with lyrics')."""
+    preps = (
+        preps_associativa if preps_associativa is not None
+        else _PREPS_ASSOC_OMISSAO
+    )
     base = t_te
     while base.dep_ == "conj" and base.head.i != base.i:
         base = base.head
     for node in {t_te, base}:
         for child in node.children:
-            if child.dep_ == "prep" and child.text.lower() == "with":
+            if child.dep_ == "prep" and child.text.lower() in preps:
                 for gc in child.children:
                     if gc.dep_ in ("pobj", "nmod") \
                             and gc.pos_ in ("NOUN", "PROPN") \
@@ -167,16 +179,21 @@ def _associativa_heterogenea(t_te, t_no) -> str:
     return ""
 
 
-def relacao_dependencia(doc, off_no: int, off_termo: int) -> dict:
+def relacao_dependencia(
+    doc, off_no: int, off_termo: int, *,
+    preps_genitivo: frozenset[str] | None = None,
+    preps_associativa: frozenset[str] | None = None,
+) -> dict:
     """Classificação sintáctica + sinalização de coordenação heterogénea.
 
     A taxonomia nuclear é a de ``_relacao_dependencia_base``; este
     invólucro acrescenta, sem alterar ``nuclear``, avisos de revisão
     quando o vínculo termo–textura passa por coordenação com elementos
-    não texturais ou por associação 'with' — os padrões que a revisão
+    não texturais ou por associação — os padrões que a revisão
     humana demonstrou serem os falsos positivos mais frequentes.
     """
-    res = _relacao_dependencia_base(doc, off_no, off_termo)
+    res = _relacao_dependencia_base(
+        doc, off_no, off_termo, preps_genitivo=preps_genitivo)
     if not res.get("nuclear"):
         return res
     t_no, t_te = _token_em(doc, off_no), _token_em(doc, off_termo)
@@ -186,7 +203,8 @@ def relacao_dependencia(doc, off_no: int, off_termo: int) -> dict:
     coord = _coordenacao_heterogenea(t_no)
     if coord:
         avisos.append(f"coordenacao_heterogenea:{coord}")
-    assoc = _associativa_heterogenea(t_te, t_no)
+    assoc = _associativa_heterogenea(
+        t_te, t_no, preps_associativa=preps_associativa)
     if assoc:
         avisos.append(f"associativa_com_nao_textural:{assoc}")
     if avisos:
@@ -196,7 +214,10 @@ def relacao_dependencia(doc, off_no: int, off_termo: int) -> dict:
     return res
 
 
-def _relacao_dependencia_base(doc, off_no: int, off_termo: int) -> dict:
+def _relacao_dependencia_base(
+    doc, off_no: int, off_termo: int, *,
+    preps_genitivo: frozenset[str] | None = None,
+) -> dict:
     """Classifica a relação sintáctica (taxonomia nuclear / não nuclear)."""
     t_no, t_te = _token_em(doc, off_no), _token_em(doc, off_termo)
     if t_no is None or t_te is None:
@@ -211,7 +232,7 @@ def _relacao_dependencia_base(doc, off_no: int, off_termo: int) -> dict:
     gov0 = _gov_efectivo(t_te)
 
     # R4.2 — genitiva ANTES de qualquer teste de governante directo
-    if _tem_complemento_genitivo(t_te, t_no):
+    if _tem_complemento_genitivo(t_te, t_no, preps_genitivo=preps_genitivo):
         rev = "genitiva_por_complemento" if t_te.dep_ not in (
             "pobj", "nmod", "") else ""
         return _resultado_rel(
@@ -364,9 +385,18 @@ def _escopo_negacao(doc, off_termo: int, off_no: int) -> str:
     return "nao"
 
 
-def anota_com_spacy(res: pd.DataFrame, modelo: str, *,
-                    obrigatorio: bool = True) -> pd.DataFrame:
-    """Classifica cada linha pela árvore de dependências (spaCy)."""
+def anota_com_spacy(
+    res: pd.DataFrame, modelo: str, *,
+    obrigatorio: bool = True,
+    preps_genitivo: frozenset[str] | None = None,
+    preps_associativa: frozenset[str] | None = None,
+) -> pd.DataFrame:
+    """Classifica cada linha pela árvore de dependências (spaCy).
+
+    Língua/modelo são da execução (``--lingua`` / registo); não há selecção
+    por linha. Se o modelo faltar e ``obrigatorio`` for False, degrada para
+    a classificação já presente / heurística do chamador.
+    """
     try:
         import spacy
     except ImportError:
@@ -375,7 +405,7 @@ def anota_com_spacy(res: pd.DataFrame, modelo: str, *,
         if obrigatorio:
             raise SystemExit(msg) from None
         print("AVISO: " + msg + " - a usar heuristica.", file=sys.stderr)
-        return res
+        return anota_com_heuristica(res)
     try:
         nlp = spacy.load(modelo, disable=["ner", "lemmatizer", "textcat"])
     except OSError:
@@ -384,11 +414,11 @@ def anota_com_spacy(res: pd.DataFrame, modelo: str, *,
         if obrigatorio:
             raise SystemExit(msg) from None
         print("AVISO: " + msg + " - a usar heuristica.", file=sys.stderr)
-        return res
+        return anota_com_heuristica(res)
 
     contextos = res["contexto"].astype(str).unique().tolist()
-    print(f"      a analisar sintaxe de {len(contextos)} contextos unicos ...",
-          flush=True)
+    print(f"      a analisar sintaxe de {len(contextos)} contextos unicos "
+          f"(modelo={modelo}) ...", flush=True)
     docs = {c: d for c, d in zip(contextos, nlp.pipe(contextos, batch_size=64))}
 
     keys = ("relacao_sintactica", "orientacao", "governante", "percurso_dep",
@@ -397,7 +427,11 @@ def anota_com_spacy(res: pd.DataFrame, modelo: str, *,
     cols = {k: [] for k in keys}
     for t in res.itertuples(index=False):
         doc = docs[str(t.contexto)]
-        r = relacao_dependencia(doc, int(t.off_no), int(t.off_termo))
+        r = relacao_dependencia(
+            doc, int(t.off_no), int(t.off_termo),
+            preps_genitivo=preps_genitivo,
+            preps_associativa=preps_associativa,
+        )
         for k in ("relacao_sintactica", "orientacao", "governante",
                   "percurso_dep", "nuclear", "motivo_exclusao",
                   "nucleo_da_propriedade", "revisao_sugerida"):
