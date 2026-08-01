@@ -1230,17 +1230,16 @@ def formatar_referencia_apa7(row: dict | pd.Series) -> str:
 
 
 def referencia_completa_minima(row: dict | pd.Series) -> bool:
-    """Mínimo para listar na bibliografia 'completa': autores+título+tipo conhecido, ou verbete com contentor."""
+    """Mínimo para lista «completa»: autores reais + título + tipo útil."""
     tipo = (_g(row, "tipo") or "desconhecido").lower()
-    if tipo == "desconhecido":
-        return False
-    if not _g(row, "titulo"):
+    autores = _g(row, "autores")
+    if tipo == "desconhecido" or not _g(row, "titulo") or not autores:
         return False
     if tipo == "verbete":
         return bool(_g(row, "contentor") or _g(row, "editora"))
     if tipo == "artigo":
         return bool(_g(row, "contentor") or _g(row, "doi_ou_url"))
-    return bool(_g(row, "autores"))
+    return True
 
 
 def desambiguar_anos(df: pd.DataFrame) -> pd.DataFrame:
@@ -1343,6 +1342,14 @@ def escrever_apa7_md(df: pd.DataFrame, saida: Path, *, titulo: str = "Referênci
     return saida
 
 
+def _xml_safe(s: str) -> str:
+    """Remove NULL/control chars que o python-docx/lxml rejeitam."""
+    return "".join(
+        ch for ch in str(s or "")
+        if ch in "\t\n\r" or ord(ch) >= 32
+    )
+
+
 def escrever_apa7_docx(
     df: pd.DataFrame,
     saida: Path,
@@ -1366,7 +1373,7 @@ def escrever_apa7_docx(
         sec.left_margin = Cm(3)
         sec.right_margin = Cm(2.5)
 
-    h = doc.add_heading(titulo, level=1)
+    h = doc.add_heading(_xml_safe(titulo), level=1)
     for run in h.runs:
         run.font.name = "Times New Roman"
 
@@ -1377,7 +1384,7 @@ def escrever_apa7_docx(
         "é obrigatória antes de citar na dissertação."
     )
     pnota = doc.add_paragraph()
-    _add_text_with_italic_md(pnota, nota, sz=19)
+    _add_text_with_italic_md(pnota, _xml_safe(nota), sz=19)
     for run in pnota.runs:
         run.italic = True
 
@@ -1395,7 +1402,8 @@ def escrever_apa7_docx(
         pf.left_indent = Cm(0.75)
         pf.space_after = Pt(6)
         pf.line_spacing_rule = WD_LINE_SPACING.SINGLE
-        _add_text_with_italic_md(p, str(r["referencia_apa7"]), sz=19)
+        _add_text_with_italic_md(
+            p, _xml_safe(str(r["referencia_apa7"])), sz=19)
 
     if len(incompletas):
         doc.add_heading(f"Por rever ({len(incompletas)})", level=2)
@@ -1416,7 +1424,7 @@ def escrever_apa7_docx(
                 f"{r['citacao_curta']} — {r['referencia_apa7']} "
                 f"[doc_id={r['doc_id']}]"
             )
-            _add_text_with_italic_md(p, texto, sz=18)
+            _add_text_with_italic_md(p, _xml_safe(texto), sz=18)
 
     doc.save(str(saida))
     return saida
