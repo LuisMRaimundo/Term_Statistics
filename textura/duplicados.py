@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import re
 from collections import defaultdict
-from typing import Any
 
 import pandas as pd
 

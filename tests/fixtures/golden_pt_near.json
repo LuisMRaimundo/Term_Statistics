@@ -2,14 +2,15 @@
   "spacy_model": "pt_core_news_sm",
   "spacy_model_version": "3.8.0",
   "lingua": "pt",
-  "n_hits": 3,
-  "n_nuclear": 3,
+  "n_hits": 6,
+  "n_nuclear": 6,
   "rows": [
     {
       "no": "textura",
       "termo_tipo": "homogeneous",
       "matched_form": "homogenea",
       "relacao_sintactica": "atributiva",
+      "revisao_sugerida": "",
       "nuclear": true
     },
     {
@@ -17,6 +18,7 @@
       "termo_tipo": "uniform",
       "matched_form": "uniforme",
       "relacao_sintactica": "atributiva",
+      "revisao_sugerida": "",
       "nuclear": true
     },
     {
@@ -24,6 +26,31 @@
       "termo_tipo": "constant",
       "matched_form": "constantes",
       "relacao_sintactica": "atributiva",
+      "revisao_sugerida": "",
+      "nuclear": true
+    },
+    {
+      "no": "textura",
+      "termo_tipo": "complex",
+      "matched_form": "complexidade",
+      "relacao_sintactica": "nominal_genitiva",
+      "revisao_sugerida": "genitiva_por_complemento",
+      "nuclear": true
+    },
+    {
+      "no": "textura",
+      "termo_tipo": "complex",
+      "matched_form": "complexa",
+      "relacao_sintactica": "atributiva",
+      "revisao_sugerida": "coordenacao_heterogenea:dinamica",
+      "nuclear": true
+    },
+    {
+      "no": "textura",
+      "termo_tipo": "uniform",
+      "matched_form": "uniforme",
+      "relacao_sintactica": "atributiva",
+      "revisao_sugerida": "",
       "nuclear": true
     }
   ]

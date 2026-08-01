@@ -21,10 +21,11 @@ from typing import Any, Optional
 import pandas as pd
 
 from textura.lexico import (
-    DOMINIOS_VALIDOS,
-    FALSOS_AMIGOS_FORMAS,
-    RELACOES_NAO_NUCLEARES,
-    RELACOES_NUCLEARES,
+    DOMINIOS_VALIDOS as DOMINIOS_VALIDOS,
+    FALSOS_AMIGOS_FORMAS as FALSOS_AMIGOS_FORMAS,
+    RELACOES_NAO_NUCLEARES as RELACOES_NAO_NUCLEARES,
+    # Re-export: same frozenset object as ``textura.lexico`` (identity tests).
+    RELACOES_NUCLEARES as RELACOES_NUCLEARES,
 )
 
 DOMINIO_OMISSAO = "musicologia"

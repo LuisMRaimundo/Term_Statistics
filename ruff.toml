@@ -1,5 +1,5 @@
 # Phase-4 CI gate: catch real mistakes without reformatting the research
-# codebase. Re-export shims and dense legacy helpers are out of scope here.
+# codebase. Dense legacy helpers remain out of scope for E702/E731.
 target-version = "py310"
 line-length = 100
 
@@ -9,6 +9,8 @@ ignore = [
     "E501",  # line length
     "E702",  # semicolon-dense legacy lines
     "E731",  # lambda in fixture builders
-    "F401",  # unused import (many intentional re-exports)
     "F841",  # unused local (deferred cleanup)
 ]
+
+# Intentional re-export shims: names are public via `__all__` (see those files).
+# Keep F401 enabled globally; do not suppress it here.

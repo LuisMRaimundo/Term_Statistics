@@ -104,7 +104,7 @@ def build_rows() -> list[list]:
         "homogeneous textures in breccia facies of the waulsortian mound",
         r"E:\geology\(2012)_Carbonates.pdf")
 
-    # PT
+    # PT (selected by --lingua pt; EN golden uses --lingua en)
     add("textura",
         "a obra apresenta uma textura homogenea de cordas no andante e "
         "um contraste timbrico no finale",
@@ -117,6 +117,18 @@ def build_rows() -> list[list]:
         "as texturas constantes do acompanhamento sustentam a melodia "
         "principal sem variar o ritmo",
         r"E:\todos os textos\(2014)_Acomp_PT.pdf")
+    # PT enrichment: genitive / coordination / explicit negation
+    add("textura",
+        "a complexidade da textura caracteriza o segundo tema do allegro",
+        r"E:\todos os textos\(2012)_Complexidade_PT.pdf")
+    # Coordination → coordenacao_heterogenea under pt_core_news_sm
+    add("textura",
+        "a textura complexa e a dinamica contrastante no coral final",
+        r"E:\todos os textos\(2013)_Combinacao_PT.pdf")
+    # Negation fixture: locks current scope (negado may stay nao)
+    add("textura",
+        "a passagem nao apresenta textura uniforme no coral final",
+        r"E:\todos os textos\(2015)_Negacao_PT.pdf")
 
     # fillers (association / diversity mass)
     add("texture",
@@ -160,7 +172,7 @@ def build_rows() -> list[list]:
         "of the symphony",
         r"E:\todos os textos\(2009)_March.pdf")
 
-    assert 20 <= len(rows) <= 30, len(rows)
+    assert 20 <= len(rows) <= 35, len(rows)
     return rows
 
 

@@ -7,7 +7,8 @@ detecção automática nem por linha da matriz. O modelo spaCy, as preposições
 genitivas e o estado de validação vêm deste registo.
 
 EN é o âncora: os valores por omissão reproduzem o comportamento pré-Phase-3
-(byte-identical no golden). FR/DE ficam registados como «não validado».
+(byte-identical no golden EN). PT e FR têm golden fino; DE permanece
+«não validado» (ausente do corpus adjudicado).
 """
 
 from __future__ import annotations
@@ -105,8 +106,9 @@ REGISTO: dict[str, LinguaConfig] = {
         modelo_spacy="fr_core_news_sm",
         preps_genitivo=frozenset({"de", "du", "des", "d'", "en", "dans"}),
         preps_associativa=frozenset({"avec"}),
-        status="nao_validado",
-        nota="Andaime FR — não validado empiricamente.",
+        status="validado",
+        nota="Golden fino (atributiva / genitiva / coordenação) com "
+             "fr_core_news_sm-3.8.0; corpus contém atestações FR.",
     ),
     "de": LinguaConfig(
         codigo="de",
@@ -116,8 +118,9 @@ REGISTO: dict[str, LinguaConfig] = {
         preps_associativa=frozenset({"mit"}),
         status="nao_validado",
         nota=(
-            "Andaime DE — genitivo morfológico sem prep ainda não tratado "
-            "(TODO; teste xfail)."
+            "Ausente do corpus adjudicado; genitivo morfológico sem prep "
+            "ainda não tratado (TODO; teste xfail). Pode permanecer "
+            "nao_validado indefinidamente."
         ),
     ),
 }

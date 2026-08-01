@@ -23,10 +23,10 @@ class TestRegistoLinguas(unittest.TestCase):
         self.assertEqual(en.negadores, frozenset(NEGACAO))
         self.assertEqual(en.preps_associativa, frozenset({"with"}))
 
-    def test_fr_de_nao_validado(self):
-        self.assertEqual(obter("fr").status, "nao_validado")
-        self.assertEqual(obter("de").status, "nao_validado")
+    def test_fr_pt_validado_de_nao(self):
+        self.assertEqual(obter("fr").status, "validado")
         self.assertEqual(obter("pt").status, "validado")
+        self.assertEqual(obter("de").status, "nao_validado")
 
     def test_todas_keeps_en_model_and_preps(self):
         ex = resolver_execucao("todas", None)
@@ -49,7 +49,7 @@ class TestRegistoLinguas(unittest.TestCase):
         self.assertEqual(ex.modelo_spacy, "en_core_web_md")
 
     def test_nao_validado_surfaced_in_aviso(self):
-        ex = resolver_execucao("fr", None)
+        ex = resolver_execucao("de", None)
         self.assertIn("não validado", ex.aviso)
 
     def test_nos_fr_registered(self):

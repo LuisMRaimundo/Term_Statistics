@@ -5,12 +5,10 @@
 from __future__ import annotations
 
 import re
-from collections import Counter
-from typing import Iterable
 
 from textura.config import (
-    ABREVIATURAS, CAMPO, COPULAS, GRADUACAO, MODALIDADE, NEGACAO, NOS,
-    RE_FIM_FRASE, RE_HIFEN_QUEBRA, RE_TOKEN, RELACOES_NUCLEARES,
+    ABREVIATURAS, COPULAS, GRADUACAO, MODALIDADE, NEGACAO, NOS,
+    RE_FIM_FRASE, RE_HIFEN_QUEBRA, RE_TOKEN,
 )
 
 

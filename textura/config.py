@@ -72,3 +72,21 @@ RE_HIFEN_QUEBRA = re.compile(r"(\w)-\s+(\w)")
 
 
 SCHEMA_NEAR = 2
+
+# Re-exports from ``textura.lexico`` for shim / legacy imports (ruff F401).
+__all__ = [
+    "ABREVIATURAS",
+    "CAMPO",
+    "COLUNAS",
+    "COPULAS",
+    "GRADUACAO",
+    "MODALIDADE",
+    "MODALIZACAO",
+    "NEGACAO",
+    "NOS",
+    "RELACOES_NUCLEARES",
+    "RE_FIM_FRASE",
+    "RE_HIFEN_QUEBRA",
+    "RE_TOKEN",
+    "SCHEMA_NEAR",
+]

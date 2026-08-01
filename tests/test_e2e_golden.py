@@ -55,12 +55,13 @@ COLS_CONCORDANCIA = [
     "dominio", "dominio_janela", "revisto_por_humano", "nota_revisao",
 ]
 
-# Captured from Phase-0 baseline run (en_core_web_sm + campo_miniatura).
-N_HITS = 27
-N_NUCLEAR = 21
-N_NON_NUCLEAR = 6
-OR_HOMOGENEOUS = 9.142
-N_APENDICE_DATA_ROWS = 21
+# Captured under --lingua en (en_core_web_sm-3.8.0 + campo_miniatura).
+# PT fixture rows are excluded by NOS language filter; counts drop vs todas.
+N_HITS = 24
+N_NUCLEAR = 20
+N_NON_NUCLEAR = 4
+OR_HOMOGENEOUS = 9.267
+N_APENDICE_DATA_ROWS = 20
 
 RX_C = re.compile(r"citacao_entre_doc_ids:C\d{4}")
 RX_P = re.compile(r"passagem_sobreposta:P\d{4}")
@@ -96,7 +97,8 @@ def near_bundle(tmp_path_factory) -> dict:
         "--xlsx", str(MATRIZ),
         "--saida", str(out),
         "--near", "4",
-        "--lingua", "todas",
+        # EN-only: PT/FR fixture rows must not enter this golden.
+        "--lingua", "en",
         "--termos", str(CAMPO),
         "--dominio-omissao", "musicologia",
     ])

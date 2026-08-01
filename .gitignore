@@ -13,3 +13,5 @@ legendas_defeito.json
 # Artefactos de sonda / gráficos gerados sob fixtures
 tests/fixtures/_probe_*
 tests/fixtures/_g_*
+# Cached spaCy model wheels (CI downloads; keep local installs out of git)
+.spacy-wheels/

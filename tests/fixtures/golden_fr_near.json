@@ -1,0 +1,33 @@
+{
+  "spacy_model": "fr_core_news_sm",
+  "spacy_model_version": "3.8.0",
+  "lingua": "fr",
+  "n_hits": 3,
+  "n_nuclear": 3,
+  "rows": [
+    {
+      "no": "texture",
+      "termo_tipo": "complex",
+      "matched_form": "complexe",
+      "relacao_sintactica": "atributiva",
+      "revisao_sugerida": "",
+      "nuclear": true
+    },
+    {
+      "no": "texture",
+      "termo_tipo": "complex",
+      "matched_form": "complexite",
+      "relacao_sintactica": "nominal_genitiva",
+      "revisao_sugerida": "genitiva_por_complemento",
+      "nuclear": true
+    },
+    {
+      "no": "texture",
+      "termo_tipo": "complex",
+      "matched_form": "complexe",
+      "relacao_sintactica": "atributiva",
+      "revisao_sugerida": "coordenacao_heterogenea:dynamique",
+      "nuclear": true
+    }
+  ]
+}

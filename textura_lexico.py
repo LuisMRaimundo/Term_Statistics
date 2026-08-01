@@ -373,7 +373,7 @@ def parece_caminho_ficheiro(valor: str) -> bool:
 def doc_id_de_caminho(caminho: str) -> str:
     """SHA-256 estável do nome de ficheiro normalizado (não do contexto)."""
     import hashlib
-    from pathlib import PureWindowsPath, PurePosixPath
+    from pathlib import PurePosixPath
     s = str(caminho or "").strip().replace("\\", "/")
     if not s:
         return hashlib.sha256(b"").hexdigest()[:16]

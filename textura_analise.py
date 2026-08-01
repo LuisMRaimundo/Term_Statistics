@@ -15,7 +15,6 @@ Uso:
 from __future__ import annotations
 
 import argparse
-import hashlib
 import math
 import re
 import sys
@@ -27,7 +26,7 @@ import numpy as np
 import pandas as pd
 from openpyxl import load_workbook
 from openpyxl.drawing.image import Image as XLImage
-from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.styles import Font
 from scipy import stats
 
 import textura_legendas as tleg

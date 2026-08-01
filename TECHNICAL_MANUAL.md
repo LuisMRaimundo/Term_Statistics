@@ -274,9 +274,10 @@ this dictionary — see that script’s module docstring.
 
 | Language | Status |
 |---|---|
-| EN | Golden-locked (full miniature chain) |
-| PT | Golden-locked on **attributive** constructions only (`tests/test_e2e_golden_pt.py`); genitive / coordination / negation enrichment is backlog |
-| FR / DE | Registered as `nao_validado` in `textura/linguas.py` |
+| EN | Golden-locked (full miniature chain under `--lingua en`) |
+| PT | Golden-locked: attributive + genitive + heterogeneous coordination (`tests/test_e2e_golden_pt.py`); negation fixture present but spaCy scope currently yields `negado=nao` |
+| FR | Golden-locked (thin matrix: attributive / genitive / coordination) with pinned `fr_core_news_sm-3.8.0` — corpus contains FR attestations |
+| DE | `nao_validado` in `textura/linguas.py` (absent from adjudicated corpus; may stay so) |
 
 ---
 
@@ -684,7 +685,7 @@ logDice rescales to a familiar collocational range (Rychlý). Compare terms **wi
 | `--termos` | Adjudicated field file |
 | `--near` | Window radius (tokens) |
 | `--banda` | Outer band limit |
-| `--lingua` | `en` / `pt` / `de` / `todas` |
+| `--lingua` | `en` / `pt` / `fr` / `de` / `todas` |
 | `--sintaxe` | `spacy` / `heuristica` |
 | `--col-no` `--col-ctx` `--col-src` | Column numbers (defaults 6, 15, 12) |
 | `--saida` | Output `*_near.xlsx` |
@@ -803,21 +804,23 @@ a parse and break golden assertions without any intentional code change.
 **Policy**
 
 1. CI and the documented research environment install models by **pinned wheel
-   URL** (currently `en_core_web_sm-3.8.0` and `pt_core_news_sm-3.8.0` from the
+   URL** (currently `en_core_web_sm-3.8.0`, `pt_core_news_sm-3.8.0`, and
+   `fr_core_news_sm-3.8.0` from the
    [explosion/spacy-models](https://github.com/explosion/spacy-models) releases),
    never via unversioned `python -m spacy download …`.
 2. `constraints.txt` pins `spacy==3.8.7` inside the models’ declared band
    (`>=3.8.0,<3.9.0`).
 3. A **model or spaCy bump is a deliberate event**: regenerate the EN golden
-   (`tests/test_e2e_golden.py`) and the PT golden
-   (`tests/test_e2e_golden_pt.py` / `fixtures/golden_pt_near.json`), update the
-   wheel URLs in `.github/workflows/ci.yml`, and record the change in the
-   commit message / changelog. Dissertation counts that depend on the old
-   model must be re-audited.
+   (`tests/test_e2e_golden.py`), the PT golden
+   (`tests/test_e2e_golden_pt.py` / `fixtures/golden_pt_near.json`), and the FR
+   golden (`tests/test_e2e_golden_fr.py` / `fixtures/golden_fr_near.json`),
+   update the wheel URLs in `.github/workflows/ci.yml`, and record the change
+   in the commit message / changelog. Dissertation counts that depend on the
+   old model must be re-audited.
 4. Language is chosen at **run level** (`--lingua`). Mode `todas` unions NOS
    paradigms but still classifies with EN model/prepositions — the CLI logs
-   this limitation explicitly. PT golden coverage is attributive-only until
-   the fixture backlog (genitive / coordination / negation) is filled.
+   this limitation explicitly. Dissertation FR/PT counts must use
+   `--lingua fr` / `--lingua pt`, not `todas`.
 
 ### Path→domain configuration
 
