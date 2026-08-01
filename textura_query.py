@@ -24,6 +24,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+from textura.lexico import ABREVIATURAS, COPULAS
 
 RE_TOKEN = re.compile(r"[A-Za-zÀ-ÖØ-öø-ÿ][A-Za-zÀ-ÖØ-öø-ÿ'’]*")
 RE_HIFEN = re.compile(r"(\w)-\s+(\w)")
@@ -37,21 +38,6 @@ _RE_OP_COLADO_FIM = re.compile(
 _RE_OP_COLADO_INI = re.compile(
     r"^(?P<op>NOR|AND|NOT|OR)(?P<pos>.+\*?)$", re.I)
 
-ABREVIATURAS = {
-    "p", "pp", "vol", "vols", "no", "nos", "ed", "eds", "cf", "ibid", "op",
-    "cit", "et", "al", "e.g", "i.e", "fig", "figs", "ex", "exx", "ms", "mss",
-    "mr", "mrs", "ms", "dr", "prof", "st", "ca", "c", "n", "trans", "rev",
-    "repr", "diss", "univ", "publ", "chap", "chaps", "sec", "secs", "bk",
-    "jan", "feb", "mar", "apr", "jun", "jul", "aug", "sep", "sept", "oct",
-    "nov", "dec", "esp", "viz", "etc", "bwv", "kv", "hob", "d", "k",
-}
-
-COPULAS = {
-    "is", "are", "was", "were", "be", "been", "being",
-    "remains", "remain", "remained", "becomes", "become", "became",
-    "seems", "seem", "seemed", "appears", "appear", "appeared",
-    "stays", "stayed",
-}
 # Só preposições que tipicamente especificam / caracterizam (não locativas vagas).
 PREPS_ESP = {"of", "with", "without", "as"}
 DETS = {

@@ -10,7 +10,15 @@ from typing import Any
 import numpy as np
 from scipy import stats
 
+from textura.lexico import (
+    POLO_ESTABILIDADE as _POLO_E,
+    POLO_VARIABILIDADE as _POLO_V,
+)
 from textura.tokenizacao import indice_frase
+
+# Cópias mutáveis: --termos pode registar etiquetas novas em runtime.
+POLO_ESTABILIDADE = set(_POLO_E)
+POLO_VARIABILIDADE = set(_POLO_V)
 
 
 def shannon(contagens) -> float:
@@ -153,17 +161,6 @@ def bootstrap_proporcao(v, n_rep=5000, semente=20260724):
     amostras = rng.choice(v, size=(n_rep, v.size), replace=True).mean(axis=1)
     return (round(float(np.percentile(amostras, 2.5)), 4),
             round(float(np.percentile(amostras, 97.5)), 4))
-
-
-POLO_ESTABILIDADE = {
-    "uniform", "invariable", "unvarying", "immutable", "unchanging",
-    "constant", "consistent", "regular", "stable", "steady", "sustained",
-    "static", "monotonous", "homogeneous",
-}
-POLO_VARIABILIDADE = {
-    "varied", "varying", "changing", "irregular", "unequal", "diverse",
-    "mutable", "multiform", "heterogeneous",
-}
 
 
 def polaridade(tipo: str, negado: bool | None = False,

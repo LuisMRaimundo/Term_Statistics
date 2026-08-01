@@ -8,26 +8,20 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-NOS = {
-    "en": {"texture", "textures", "textural", "textured", "texturally", "texturing"},
-    "pt": {"textura", "texturas", "textural", "texturais"},
-    "de": {"textur", "texturen"},
-}
+from textura.lexico import (
+    NOS,
+    POLO_ESTABILIDADE as _POLO_E,
+    POLO_VARIABILIDADE as _POLO_V,
+)
 
 NODE_PATTERNS = {
     "textur*", "texture*", "textures*", "textural*", "texturally*",
     "textura*", "texturas*", "texturais*", "textur",
 }
 
-POLO_ESTABILIDADE = {
-    "uniform", "invariable", "unvarying", "immutable", "unchanging",
-    "constant", "consistent", "regular", "stable", "steady", "sustained",
-    "static", "monotonous", "homogeneous",
-}
-POLO_VARIABILIDADE = {
-    "varied", "varying", "changing", "irregular", "unequal", "diverse",
-    "mutable", "multiform", "heterogeneous",
-}
+# Cópias mutáveis: carregar_campo_termos pode acrescentar etiquetas.
+POLO_ESTABILIDADE = set(_POLO_E)
+POLO_VARIABILIDADE = set(_POLO_V)
 
 
 @dataclass(frozen=True)

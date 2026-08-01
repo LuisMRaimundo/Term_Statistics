@@ -34,6 +34,7 @@ import textura_legendas as tleg
 import textura_lexico as tlex
 import textura_near as tn
 import textura_plots as tplot
+import textura_triagem as ttri
 
 try:
     import textura_stats as tst
@@ -45,10 +46,9 @@ MODOS_DEDUPE = (
     "ocorrencia", "ocorrencia_termo",
 )
 
-RELACOES_VALIDAS = sorted(tn.RELACOES_NUCLEARES | {
-    "incidental", "adverbial_verbal", "adverbial_de_grau",
-    "coordenada", "indeterminada",
-})
+RELACOES_VALIDAS = sorted(
+    set(tn.RELACOES_NUCLEARES) | set(ttri.RELACOES_NAO_NUCLEARES)
+)
 COLS_EDITAVEIS = [
     "relacao_sintactica", "nuclear", "polaridade", "eixo",
     "dominio", "motivo_exclusao",

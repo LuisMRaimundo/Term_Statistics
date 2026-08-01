@@ -52,6 +52,8 @@ from openpyxl import load_workbook
 from openpyxl.styles import PatternFill
 from openpyxl.worksheet.worksheet import Worksheet
 
+from textura.lexico import DOMAIN_LEXICON
+
 SHEET = "8_Concordancia"
 
 FILL_DUP = PatternFill("solid", fgColor="00FF00")      # green  — duplicate
@@ -284,20 +286,6 @@ def classify_relation(context: str, matched_form: str):
 # --------------------------------------------------------------------------
 # 3. Extra-musical domain lexicon
 # --------------------------------------------------------------------------
-
-DOMAIN_LEXICON = {
-    "geologia": ["dolomite", "breccia", "facies", "bioclast", "waulsortian",
-                 "sediment", "mineral"],
-    "artes_visuais": ["painting", "paintings", "mural", "canvas",
-                      "aaron douglas", "flat plane"],
-    "haptica_materiais": ["haptic", "tactile", "knitting", "fabric swatch",
-                          "materials library"],
-    "ecolocalizacao": ["echolocation", "bat inspired", "sonar"],
-    "fala": ["speech recognition", "speech waveform", "voice conversion"],
-    "texto_social": ["social texture", "reading and writing"],
-    "gastronomia": ["fine dining", "flavors", "flavours"],
-}
-
 
 def classify_domain(context: str):
     c = norm(context)

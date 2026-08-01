@@ -1,0 +1,10 @@
+# falsos_amigos.tsv
+forma	motivo_exclusao
+constants	fora_de_dominio
+continua	fora_da_classe_uniforme
+continuation	termo_nao_relacionado_directamente_com_textura
+continue	termo_nao_relacionado_directamente_com_textura
+continues	termo_nao_relacionado_directamente_com_textura
+continuo	termo_nao_relacionado_directamente_com_textura
+continuum	fora_da_classe_uniforme
+continuums	fora_da_classe_uniforme

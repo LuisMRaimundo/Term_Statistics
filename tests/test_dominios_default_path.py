@@ -1,45 +1,54 @@
 # -*- coding: utf-8 -*-
-"""Default dominios.tsv must resolve at the project root, not textura/."""
+"""Default dominios TSV must resolve via caminho_dominios_path (not textura/)."""
 
 from __future__ import annotations
 
 import unittest
 from pathlib import Path
-from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 class TestDominiosDefaultPath(unittest.TestCase):
-    def test_pipeline_default_cand_is_project_root(self):
-        """Regression: after Phase 1, __file__ is textura/pipeline.py."""
+    def test_caminho_dominios_path_is_dados_lexicos(self):
+        """Phase 2: canonical path rules live under dados/lexicos/."""
+        from textura.lexico import caminho_dominios_path
+
+        cand = caminho_dominios_path()
+        self.assertEqual(cand, ROOT / "dados" / "lexicos" / "dominios_path.tsv")
+        self.assertTrue(cand.is_file(), f"expected {cand}")
+        # Must NOT point inside the package directory
+        self.assertNotEqual(cand.parent.name, "textura")
+
+    def test_pipeline_default_uses_caminho_helper(self):
+        """pipeline.main must call caminho_dominios_path when --dominios omitted."""
+        import inspect
+
         import textura.pipeline as pipe
 
-        pipeline_file = Path(pipe.__file__).resolve()
-        self.assertEqual(pipeline_file.parent.name, "textura")
-        # Exact idiom used in pipeline.main for --dominios default
-        cand = pipeline_file.parents[1] / "dominios.tsv"
-        self.assertEqual(cand, ROOT / "dominios.tsv")
-        self.assertTrue(
-            cand.is_file(),
-            f"expected committed dominios.tsv at project root: {cand}",
-        )
-        # Must NOT point inside the package
-        self.assertFalse(
-            (pipeline_file.parent / "dominios.tsv").is_file()
-            and cand == pipeline_file.parent / "dominios.tsv"
-        )
+        src = inspect.getsource(pipe.main)
+        self.assertIn("caminho_dominios_path", src)
 
     def test_default_branch_loads_when_dominios_omitted(self):
         """Smoke: carregar_dominios on the resolved default path succeeds."""
         import textura_triagem as ttri
+        from textura.lexico import caminho_dominios_path
 
-        regras = ttri.carregar_dominios(ROOT / "dominios.tsv")
+        regras = ttri.carregar_dominios(caminho_dominios_path())
         self.assertGreater(len(regras), 0)
-        # musicologia rule for «todos os textos» is the default corpus cue
         dom = ttri.classificar_dominio(
             r"E:\todos os textos\(2000)_X.pdf", regras)
         self.assertEqual(dom, "musicologia")
+
+    def test_root_stub_still_loads_if_present(self):
+        """Compat: root dominios.tsv remains readable if scripts hard-code it."""
+        import textura_triagem as ttri
+
+        root = ROOT / "dominios.tsv"
+        if not root.is_file():
+            self.skipTest("root dominios.tsv absent")
+        regras = ttri.carregar_dominios(root)
+        self.assertGreater(len(regras), 0)
 
 
 if __name__ == "__main__":

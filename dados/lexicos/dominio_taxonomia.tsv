@@ -1,0 +1,15 @@
+# dominio_taxonomia.tsv
+dominio	fonte
+artes_visuais	janela
+ciencias_naturais	path
+ecolocalizacao	janela
+fala	janela
+gastronomia	janela
+geologia	janela
+haptica_materiais	janela
+matematica	path
+mir_visao	path
+musicologia	path
+outro	path
+por_rever	sistema
+texto_social	janela

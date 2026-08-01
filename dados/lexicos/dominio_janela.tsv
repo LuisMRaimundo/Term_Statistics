@@ -1,0 +1,35 @@
+# dominio_janela.tsv — ordem = prioridade de classificacao
+dominio	pista
+geologia	dolomite
+geologia	breccia
+geologia	facies
+geologia	bioclast
+geologia	waulsortian
+geologia	sedimentar
+geologia	mineralog
+geologia	sediment
+geologia	mineral
+artes_visuais	painting
+artes_visuais	paintings
+artes_visuais	mural
+artes_visuais	canvas
+artes_visuais	flat plane
+artes_visuais	aaron douglas
+haptica_materiais	haptic
+haptica_materiais	tactile
+haptica_materiais	knitting needles
+haptica_materiais	materials library
+haptica_materiais	knitting
+haptica_materiais	fabric swatch
+ecolocalizacao	echolocation
+ecolocalizacao	bat-inspired
+ecolocalizacao	bat inspired
+ecolocalizacao	sonar
+fala	speech recognition
+fala	speech waveform
+fala	voice conversion
+texto_social	social texture
+texto_social	reading and writing
+gastronomia	fine dining
+gastronomia	flavors
+gastronomia	flavours

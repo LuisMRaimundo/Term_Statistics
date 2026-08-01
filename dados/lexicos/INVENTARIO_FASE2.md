@@ -46,3 +46,11 @@ exactamente uma vez» verifica-se por diff/grep contra este inventário.
 - `dominios_path.tsv`: `padrao` \\t `dominio` (como o actual `dominios.tsv`)
 - `falsos_amigos.tsv`: `forma` \\t `motivo_exclusao`
 - `dominio_taxonomia.tsv`: `dominio` \\t `fonte` (`path`\|`janela`\|`ambos`)
+
+## Estado pós-movimento
+
+Fonte única: `textura/lexico.py` carrega `dados/lexicos/*.tsv`.
+Consumidores reexportam (sem literais). Raiz `dominios.tsv` mantém-se
+como stub de compatibilidade; o default do pipeline usa
+`caminho_dominios_path()` → `dados/lexicos/dominios_path.tsv`.
+Aceitação: `tests/test_lexicos_fonte_unica.py`.

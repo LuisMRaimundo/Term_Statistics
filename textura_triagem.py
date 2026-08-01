@@ -20,10 +20,14 @@ from typing import Any, Optional
 
 import pandas as pd
 
+from textura.lexico import (
+    DOMINIOS_VALIDOS,
+    FALSOS_AMIGOS_FORMAS,
+    RELACOES_NAO_NUCLEARES,
+    RELACOES_NUCLEARES,
+)
+
 DOMINIO_OMISSAO = "musicologia"
-DOMINIOS_VALIDOS = {
-    "musicologia", "mir_visao", "matematica", "ciencias_naturais", "outro",
-}
 
 RE_METATEXTO = re.compile(
     r"(?i)\b(ieee|arxiv|isbn|doi|proceedings|symposium|trans\.|pp\.|vol\.|"
@@ -38,29 +42,6 @@ RE_LEGENDA = re.compile(
     r"(?i)^(fig(?:ure)?|table|example|ex)\.?\s*\d"
 )
 RE_VOGAL = re.compile(r"[aeiouáéíóúàèìòùâêîôûäëïöü]", re.I)
-
-# Falsos amigos / fora de classe (matched_form.lower() → motivo_exclusao).
-# Aplicado na extracção e reutilizável na revisão LR — não altera relações
-# nucleares legítimas (continuous, homogeneity, uniform, …).
-FALSOS_AMIGOS_FORMAS: dict[str, str] = {
-    "continuo": "termo_nao_relacionado_directamente_com_textura",
-    "continue": "termo_nao_relacionado_directamente_com_textura",
-    "continues": "termo_nao_relacionado_directamente_com_textura",
-    "continuation": "termo_nao_relacionado_directamente_com_textura",
-    "continuum": "fora_da_classe_uniforme",
-    "continua": "fora_da_classe_uniforme",
-    "continuums": "fora_da_classe_uniforme",
-    "constants": "fora_de_dominio",
-}
-
-RELACOES_NUCLEARES = {
-    "atributiva", "predicativa", "predicativa_secundaria",
-    "nominal_composto", "nominal_genitiva", "adverbial",
-}
-RELACOES_NAO_NUCLEARES = {
-    "incidental", "adverbial_verbal", "adverbial_de_grau",
-    "coordenada", "indeterminada",
-}
 
 
 def carregar_dominios(caminho: Path | None) -> list[tuple[re.Pattern, str]]:

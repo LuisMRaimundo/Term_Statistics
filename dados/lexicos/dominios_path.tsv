@@ -1,6 +1,4 @@
 # path_regex	dominio
-# Compat stub: canonical copy is dados/lexicos/dominios_path.tsv
-# (pipeline default via textura.lexico.caminho_dominios_path).
 # Default corpus rules (additive). Unmatched paths stay por_rever unless
 # textura_near/triagem uses --dominio-omissao musicologia.
 (?i)todos os textos	musicologia

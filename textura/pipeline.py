@@ -29,7 +29,7 @@ from textura.duplicados import (
     fundir_janelas_e_marcar_duplicados, occurrence_id_de,
 )
 from textura.exportacao import reordenar_colunas_hits
-from textura.lexico import dominio_janela
+from textura.lexico import caminho_dominios_path, dominio_janela
 from textura.relacoes import anota_com_heuristica, anota_com_spacy
 from textura.tokenizacao import (
     _Consulta, anota_sintaxe, compila_campo, emparelha_contexto, fronteiras_frase, indices_no, normaliza,
@@ -96,7 +96,7 @@ def main() -> int:
                     help="inverter polaridade quando negado=True (omissão: não)")
     ap.add_argument("--dominios", type=Path, default=None,
                     help="TSV padrao_ficheiro\\tdominio para triagem documental "
-                         "(omissão: dominios.tsv junto do projecto, se existir)")
+                         "(omissão: dados/lexicos/dominios_path.tsv)")
     ap.add_argument("--incluir-dominio", action="append", default=None,
                     help="domínio a readmitir (repetível); omissão: só musicologia")
     ap.add_argument(
@@ -347,8 +347,7 @@ def main() -> int:
     if ttri is not None:
         dom_path = args.dominios
         if dom_path is None:
-            # Project root (…/Term statistics), not the textura/ package dir
-            cand = Path(__file__).resolve().parents[1] / "dominios.tsv"
+            cand = caminho_dominios_path()
             if cand.is_file():
                 dom_path = cand
         regras = ttri.carregar_dominios(dom_path)
