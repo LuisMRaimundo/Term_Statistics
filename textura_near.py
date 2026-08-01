@@ -745,7 +745,77 @@ def _amod_coordenado_do_no(t_te, t_no) -> bool:
     return False
 
 
+_RX_TEXTURAL = re.compile(r"^textur", re.IGNORECASE)
+
+
+def _e_token_textural(tok) -> bool:
+    """Token pertencente ao paradigma lexical de 'textura'."""
+    return bool(_RX_TEXTURAL.match(tok.text))
+
+
+def _coordenacao_heterogenea(t_no) -> str:
+    """Nome não textural coordenado com N ('of texture and dynamics',
+    'of colors and textures'). Devolve o texto do conjunto ou ''."""
+    cands = list(getattr(t_no, "conjuncts", []) or [])
+    b = t_no
+    while b.dep_ == "conj" and b.head.i != b.i:
+        cands.append(b.head)
+        b = b.head
+    cands.extend(c for c in t_no.children if c.dep_ == "conj")
+    for c in cands:
+        if c.pos_ in ("NOUN", "PROPN") and not _e_token_textural(c):
+            return c.text
+    return ""
+
+
+def _associativa_heterogenea(t_te, t_no) -> str:
+    """T rege prep 'with' cujo objecto é nome não textural, estando N
+    fora desse complemento ('textures combined with lyrics')."""
+    base = t_te
+    while base.dep_ == "conj" and base.head.i != base.i:
+        base = base.head
+    for node in {t_te, base}:
+        for child in node.children:
+            if child.dep_ == "prep" and child.text.lower() == "with":
+                for gc in child.children:
+                    if gc.dep_ in ("pobj", "nmod") \
+                            and gc.pos_ in ("NOUN", "PROPN") \
+                            and not _e_token_textural(gc) \
+                            and not _no_no_subtree(gc, t_no):
+                        return gc.text
+    return ""
+
+
 def relacao_dependencia(doc, off_no: int, off_termo: int) -> dict:
+    """Classificação sintáctica + sinalização de coordenação heterogénea.
+
+    A taxonomia nuclear é a de ``_relacao_dependencia_base``; este
+    invólucro acrescenta, sem alterar ``nuclear``, avisos de revisão
+    quando o vínculo termo–textura passa por coordenação com elementos
+    não texturais ou por associação 'with' — os padrões que a revisão
+    humana demonstrou serem os falsos positivos mais frequentes.
+    """
+    res = _relacao_dependencia_base(doc, off_no, off_termo)
+    if not res.get("nuclear"):
+        return res
+    t_no, t_te = _token_em(doc, off_no), _token_em(doc, off_termo)
+    if t_no is None or t_te is None:
+        return res
+    avisos = []
+    coord = _coordenacao_heterogenea(t_no)
+    if coord:
+        avisos.append(f"coordenacao_heterogenea:{coord}")
+    assoc = _associativa_heterogenea(t_te, t_no)
+    if assoc:
+        avisos.append(f"associativa_com_nao_textural:{assoc}")
+    if avisos:
+        prev = res.get("revisao_sugerida") or ""
+        res["revisao_sugerida"] = (
+            "; ".join([prev] + avisos) if prev else "; ".join(avisos))
+    return res
+
+
+def _relacao_dependencia_base(doc, off_no: int, off_termo: int) -> dict:
     """Classifica a relação sintáctica (taxonomia nuclear / não nuclear)."""
     t_no, t_te = _token_em(doc, off_no), _token_em(doc, off_termo)
     if t_no is None or t_te is None:
@@ -1018,6 +1088,32 @@ def anota_com_heuristica(res: pd.DataFrame) -> pd.DataFrame:
     res["negado"] = negs
     res["atribuicao"] = np.where(res["nuclear"], "genuína", "incidental")
     return res
+
+
+# Léxico mínimo, por janela, para usos extramusicais de «textura» que a
+# triagem documental (por ficheiro) não consegue ver. Aditivo e conservador:
+# apenas sinaliza para revisão; nunca altera ``nuclear``.
+DOMINIO_JANELA_LEXICO: dict[str, tuple[str, ...]] = {
+    "geologia": ("dolomite", "breccia", "facies", "bioclast", "waulsortian",
+                 "sedimentar", "mineralog"),
+    "artes_visuais": ("painting", "paintings", "mural", "canvas",
+                      "flat plane"),
+    "haptica_materiais": ("haptic", "tactile", "knitting needles",
+                          "materials library"),
+    "ecolocalizacao": ("echolocation", "bat-inspired", "bat inspired"),
+    "fala": ("speech recognition", "speech waveform", "voice conversion"),
+    "texto_social": ("social texture", "reading and writing"),
+}
+
+
+def dominio_janela(contexto: str) -> str:
+    """Domínio extramusical sugerido pela própria janela ('' se nenhum)."""
+    c = normaliza(str(contexto or "")).lower()
+    for dom, pistas in DOMINIO_JANELA_LEXICO.items():
+        for p in pistas:
+            if p in c:
+                return dom
+    return ""
 
 
 def conta_tokens(tokens, no_idx, limites, lo, hi, mesma_frase=True) -> int:
@@ -1302,6 +1398,64 @@ def _score_sobrevivente_janela(row) -> tuple:
     return (nuc, ctx, smr)
 
 
+def _grupos_citacao_entre_docs(out: pd.DataFrame, ngrama: int = 8,
+                               max_posting: int = 30) -> list[list]:
+    """Grupos de janelas quase iguais abrangendo ``doc_id`` distintos.
+
+    Critério: partilha de pelo menos um n-grama contíguo de ``ngrama``
+    tokens (coerente com ``_partilha_ngrama``), com bloqueio por índice
+    invertido para evitar comparação O(n²).
+    """
+    grams_idx: dict[str, list] = defaultdict(list)
+    presentes: set = set()
+    for i, row in out.iterrows():
+        toks = [w for w, _ in tokeniza(str(row["contexto"]))]
+        if len(toks) < ngrama:
+            continue
+        presentes.add(i)
+        for k in range(len(toks) - ngrama + 1):
+            grams_idx[" ".join(toks[k:k + ngrama])].append(i)
+
+    parent = {i: i for i in presentes}
+
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    for ids in grams_idx.values():
+        ids = sorted(set(ids))
+        if len(ids) < 2 or len(ids) > max_posting:
+            continue
+        base = ids[0]
+        for other in ids[1:]:
+            ra, rb = find(base), find(other)
+            if ra != rb:
+                parent[ra] = rb
+
+    grupos: dict = defaultdict(list)
+    for i in presentes:
+        grupos[find(i)].append(i)
+    return [sorted(v) for v in grupos.values()
+            if len(v) > 1 and out.loc[v, "doc_id"].nunique() > 1]
+
+
+def _score_citacao(row) -> tuple:
+    """Sobrevivente preferido num grupo de citação entre documentos."""
+    caminho = str(row.get("caminho_ficheiro") or "")
+    nome = caminho.replace("\\", "/").rsplit("/", 1)[-1]
+    pref = 0
+    if "todos os textos" in caminho:
+        pref += 4                       # pasta catalogada do corpus
+    if re.match(r"^\(\d{4}\)", nome):
+        pref += 2                       # convenção '(AAAA)_Título'
+    if "__" in nome:
+        pref -= 1                       # cópias com sufixo de hash
+    return (_score_sobrevivente_janela(row)[0], pref,
+            *_score_sobrevivente_janela(row)[1:])
+
+
 def fundir_janelas_e_marcar_duplicados(res: pd.DataFrame,
                                        ngrama: int = 8) -> pd.DataFrame:
     """Funde janelas KWIC deslocadas do *mesmo* hit; assinala passagens.
@@ -1313,7 +1467,7 @@ def fundir_janelas_e_marcar_duplicados(res: pd.DataFrame,
     - Mesmo ``doc_id`` + n-grama partilhado com termos *diferentes* →
       apenas ``candidato_duplicado`` / ``grupo_passagem_id`` (não excluir:
       podem ser hits legítimos na mesma passagem / ocorrência mestra).
-    - Citações exactas sob ``doc_id`` distintos → ``citacao_repetida``.
+    - Citações quase iguais sob ``doc_id`` distintos → ``citacao_repetida``.
     """
     if res.empty or "doc_id" not in res.columns:
         return res
@@ -1326,25 +1480,37 @@ def fundir_janelas_e_marcar_duplicados(res: pd.DataFrame,
         out["n_janelas_fundidas"] = 1
     out["n_janelas_fundidas"] = out["n_janelas_fundidas"].fillna(1).astype(int)
 
-    # --- citações repetidas (mesmo texto, doc_ids distintos) -------------
-    grupos_ctx: dict[str, list] = defaultdict(list)
-    for i, row in out.iterrows():
-        toks_n = [w for w, _ in tokeniza(str(row["contexto"]))]
-        if len(toks_n) >= 8:
-            grupos_ctx[" ".join(toks_n)].append(i)
-    for idxs in grupos_ctx.values():
-        docs = {out.at[i, "doc_id"] for i in idxs}
-        if len(docs) <= 1:
-            continue
-        # manter o primeiro; marcar restantes
-        for i in idxs[1:]:
-            out.at[i, "nuclear"] = False
-            if not out.at[i, "motivo_exclusao"]:
-                out.at[i, "motivo_exclusao"] = "citacao_repetida"
+    # --- citações repetidas (texto quase igual, doc_ids distintos) -------
+    # Antes: igualdade exacta da janela inteira, cega a variantes de
+    # fronteira/OCR/edição. Agora: partilha de n-grama (o mesmo critério
+    # já usado dentro do documento), com bloqueio por índice invertido.
+    gid_cit = 0
+    for membros in _grupos_citacao_entre_docs(out, ngrama=ngrama):
+        gid_cit += 1
+        gcit = f"C{gid_cit:04d}"
+        tag = f"citacao_entre_doc_ids:{gcit}"
+        for i in membros:
             prev = str(out.at[i, "candidato_duplicado"] or "")
-            tag = "citacao_entre_doc_ids"
-            out.at[i, "candidato_duplicado"] = (
-                f"{prev}; {tag}" if prev else tag)
+            if "citacao_entre_doc_ids" not in prev:
+                out.at[i, "candidato_duplicado"] = (
+                    f"{prev}; {tag}" if prev else tag)
+        # demover apenas hits lexicais repetidos entre documentos,
+        # mantendo um sobrevivente por (canonical_term, matched_form)
+        por_termo: dict = defaultdict(list)
+        for i in membros:
+            por_termo[(str(out.at[i, "canonical_term"]),
+                       str(out.at[i, "matched_form"]))].append(i)
+        for grupo in por_termo.values():
+            if len(grupo) < 2:
+                continue
+            if len({out.at[i, "doc_id"] for i in grupo}) < 2:
+                continue        # repetição interna: tratada pela fusão
+            ranked = sorted(grupo, key=lambda i: _score_citacao(out.loc[i]),
+                            reverse=True)
+            for i in ranked[1:]:
+                out.at[i, "nuclear"] = False
+                if not out.at[i, "motivo_exclusao"]:
+                    out.at[i, "motivo_exclusao"] = "citacao_repetida"
 
     # --- fusão / passagem no mesmo documento -----------------------------
     por_doc: dict = defaultdict(list)
@@ -1501,7 +1667,7 @@ def reordenar_colunas_hits(res: pd.DataFrame) -> pd.DataFrame:
         "motivo_exclusao", "nuclear", "fonte_classificacao",
         "n_janelas_fundidas", "revisao_sugerida",
         "nucleo_da_propriedade", "orientacao", "governante", "percurso_dep",
-        "dominio", "revisto_por_humano", "nota_revisao",
+        "dominio", "dominio_janela", "revisto_por_humano", "nota_revisao",
     ]
     frente = [c for c in prioridade if c in res.columns]
     resto = [c for c in res.columns if c not in frente]
@@ -1856,6 +2022,15 @@ def main() -> int:
     # Rematch IDs após eventual remoção de cópias exactas
     if len(res) != n_antes_dedupe:
         res = atribuir_match_ids(res)
+    # Domínio por janela (complementa a triagem documental por caminho)
+    if "contexto" in res.columns:
+        res["dominio_janela"] = res["contexto"].map(dominio_janela)
+        if "revisao_sugerida" in res.columns:
+            _mx = res["dominio_janela"].astype(bool)
+            res.loc[_mx, "revisao_sugerida"] = res.loc[_mx].apply(
+                lambda r: ((str(r["revisao_sugerida"]) + "; ")
+                           if r["revisao_sugerida"] else "")
+                + "dominio_janela:" + r["dominio_janela"], axis=1)
     res = reordenar_colunas_hits(res)
 
     res_excluidas = res.loc[~res["nuclear"].astype(bool)].copy() if (

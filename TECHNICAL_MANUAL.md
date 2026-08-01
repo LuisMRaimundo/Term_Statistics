@@ -67,6 +67,7 @@ Supporting modules
     textura_query.py     boolean query parser
     textura_triagem.py   domain triage / OCR noise / false friends / checklist
     textura_doctor.py    pre-analysis revision checklist (CLI)
+    textura_concordancia_qa.py  QA on 8_Concordancia (duplicates / relation 2nd opinion / extra-musical domain)
     textura_apa7.py      optional APA 7 catalogue for appendix --refs
     textura_stats.py     logistic regression, BF, Hardie LR, CA, profiles
     textura_plots.py     frequency, clouds, sankey
@@ -665,6 +666,23 @@ python textura_doctor.py --xlsx UNIFORME_near_revisto_LR.xlsx
 python textura_doctor.py --xlsx ... --estrito   # exit 1 on errors
 ```
 
+### `textura_concordancia_qa.py` (optional, during / after phase 2a)
+
+Dry-run by default. Writes only to *new* QA columns and visual mirrors; does not overwrite `relacao_sintactica`, `dominio`, or human decisions unless `--demote-duplicates` is explicitly set.
+
+```bash
+python textura_concordancia_qa.py --xlsx UNIFORME_near_revisto_LR.xlsx
+python textura_concordancia_qa.py --xlsx IN.xlsx --saida OUT.xlsx --apply
+python textura_concordancia_qa.py --xlsx IN.xlsx -o OUT.xlsx --apply --demote-duplicates
+```
+
+| Flag | Role |
+|---|---|
+| `--xlsx` / positional | Concordance Excel (`8_Concordancia`) |
+| `--saida` / `-o` | Output workbook (default: overwrite input when `--apply`) |
+| `--apply` | Write QD tags, `qa_*` columns, and colour mirrors |
+| `--demote-duplicates` | Set `nuclear=FALSE` on redundant copies (requires `--apply`) |
+
 ### `textura_apa7.py` (optional, before phase 3)
 
 Standalone script: follow each work’s hyperlink/DOI (Crossref / HTML meta / local PDF), build APA 7 references, write a catalogue for `--refs`. Does **not** replace PDF page localisation.
@@ -736,10 +754,11 @@ python textura_apendice.py --xlsx UNIFORME_near.xlsx --refs refs_apa7.xlsx
 | `textura_stats.py` | LR, BF, permutations, logistic, CA, profiles |
 | `textura_triagem.py` | Domain filters, OCR noise, false friends, checklist |
 | `textura_doctor.py` | Pre-analysis checklist CLI |
+| `textura_concordancia_qa.py` | Duplicates / relation second opinion / extra-musical domain QA |
 | `textura_apa7.py` | APA 7 catalogue for `--refs` |
 | `textura_plots.py` | Visualisations |
-| `textura_gui.py` | UI shell (+ Doctor / APA7 utilities) |
-| `tests/` | Tokenisation, syntax, IDs, excerpt formatting, triage R95 |
+| `textura_gui.py` | UI shell (+ Doctor / QA / APA7 utilities) |
+| `tests/` | Tokenisation, syntax, IDs, excerpt formatting, triage R95, QA |
 
 ---
 

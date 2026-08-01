@@ -34,6 +34,7 @@ MOTOR = AQUI / "textura_search.py"
 MOTOR_ANALISE = AQUI / "textura_analise.py"
 MOTOR_APENDICE = AQUI / "textura_apendice.py"
 MOTOR_DOCTOR = AQUI / "textura_doctor.py"
+MOTOR_QA = AQUI / "textura_concordancia_qa.py"
 MOTOR_APA7 = AQUI / "textura_apa7.py"
 
 try:
@@ -256,6 +257,10 @@ class App(tk.Tk):
             util, text="Doctor (checklist…)", style="Toolbutton",
             command=self._doctor_excel,
         ).pack(side="left")
+        ttk.Button(
+            util, text="QA concordância…", style="Toolbutton",
+            command=self._qa_concordancia,
+        ).pack(side="left", padx=(8, 0))
         ttk.Button(
             util, text="APA7 catálogo…", style="Toolbutton",
             command=self._apa7_catalogo,
@@ -822,6 +827,114 @@ class App(tk.Tk):
         self._log("\n" + "-" * 60)
         self._log(" ".join(f'"{a}"' if " " in a else a for a in cmd))
         self._arranca_cmd(cmd, "Doctor…")
+
+    def _qa_concordancia(self):
+        """QA sobre 8_Concordancia: duplicados, relações, domínio extra."""
+        if self.proc is not None:
+            return
+        if not MOTOR_QA.exists():
+            messagebox.showerror("Erro", f"Motor em falta:\n{MOTOR_QA}")
+            return
+
+        dlg = tk.Toplevel(self)
+        dlg.title("QA concordância (8_Concordancia)")
+        dlg.transient(self)
+        dlg.grab_set()
+        dlg.geometry("640x260")
+        frm = ttk.Frame(dlg, padding=14)
+        frm.pack(fill="both", expand=True)
+        frm.columnconfigure(1, weight=1)
+
+        v_in = tk.StringVar(value=self._sugestao_excel_apendice())
+        v_out = tk.StringVar(value="")
+        v_apply = tk.BooleanVar(value=False)
+        v_demote = tk.BooleanVar(value=False)
+
+        ttk.Label(frm, text="Excel revisto / NEAR").grid(
+            row=0, column=0, sticky="w")
+        ttk.Entry(frm, textvariable=v_in).grid(
+            row=0, column=1, sticky="ew", padx=6)
+
+        def _pick_in():
+            p = filedialog.askopenfilename(
+                title="Excel com 8_Concordancia",
+                filetypes=[("Excel", "*.xlsx"), ("Todos", "*.*")],
+            )
+            if p:
+                v_in.set(p)
+                if not v_out.get():
+                    v_out.set(str(Path(p).with_name(
+                        Path(p).stem + "_qa.xlsx")))
+
+        ttk.Button(frm, text="…", width=3, command=_pick_in).grid(
+            row=0, column=2)
+
+        ttk.Label(frm, text="Saída (se aplicar)").grid(
+            row=1, column=0, sticky="w", pady=(8, 0))
+        ttk.Entry(frm, textvariable=v_out).grid(
+            row=1, column=1, sticky="ew", padx=6, pady=(8, 0))
+
+        def _pick_out():
+            p = filedialog.asksaveasfilename(
+                title="Guardar Excel QA",
+                defaultextension=".xlsx",
+                initialfile=(Path(v_in.get()).stem + "_qa.xlsx"
+                             if v_in.get() else "concordancia_qa.xlsx"),
+                filetypes=[("Excel", "*.xlsx"), ("Todos", "*.*")],
+            )
+            if p:
+                v_out.set(p)
+
+        ttk.Button(frm, text="…", width=3, command=_pick_out).grid(
+            row=1, column=2, pady=(8, 0))
+
+        ttk.Checkbutton(
+            frm, text="Aplicar (escrever tags / colunas / cores)",
+            variable=v_apply,
+        ).grid(row=2, column=0, columnspan=3, sticky="w", pady=(12, 0))
+        ttk.Checkbutton(
+            frm, text="Demover duplicados (nuclear=FALSE nos redundantes)",
+            variable=v_demote,
+        ).grid(row=3, column=0, columnspan=3, sticky="w", pady=(4, 0))
+        ttk.Label(
+            frm, style="Hint.TLabel", wraplength=580,
+            text="Por omissão: relatório JSON apenas (não altera o ficheiro). "
+                 "Colunas novas: qa_relacao, qa_dominio_extra, …",
+        ).grid(row=4, column=0, columnspan=3, sticky="w", pady=(10, 0))
+
+        def _ok():
+            xin = v_in.get().strip()
+            if not xin:
+                messagebox.showerror("Erro", "Indique o Excel de entrada.",
+                                     parent=dlg)
+                return
+            cmd = [sys.executable, str(MOTOR_QA), "--xlsx", xin]
+            if v_apply.get():
+                cmd.append("--apply")
+                xout = v_out.get().strip()
+                if xout:
+                    cmd.extend(["--saida", xout])
+                    self.v_saida.set(xout)
+                if v_demote.get():
+                    cmd.append("--demote-duplicates")
+            elif v_demote.get():
+                messagebox.showerror(
+                    "Erro",
+                    "Demover duplicados exige «Aplicar».",
+                    parent=dlg,
+                )
+                return
+            dlg.destroy()
+            self._log("\n" + "-" * 60)
+            self._log(" ".join(f'"{a}"' if " " in a else a for a in cmd))
+            self._arranca_cmd(cmd, "QA concordância…")
+
+        btns = ttk.Frame(frm)
+        btns.grid(row=5, column=0, columnspan=3, sticky="e", pady=(16, 0))
+        ttk.Button(btns, text="Cancelar", command=dlg.destroy).pack(
+            side="right")
+        ttk.Button(btns, text="Correr", command=_ok).pack(
+            side="right", padx=(0, 8))
 
     def _apa7_catalogo(self):
         """Gera catálogo APA7 opcional para --refs no apêndice."""
