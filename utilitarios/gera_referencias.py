@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Inventário e extracção/validação de referências APA 7.
+"""Inventário, extracção e formatação APA 7 de referências.
 
 Uso::
 
-    python utilitarios/gera_referencias.py --inventario \\
-        --xlsx UNIFORME_near.xlsx --raiz-corpus "E:\\todos os textos"
+    python utilitarios/gera_referencias.py --inventario --xlsx NEAR.xlsx
+    python utilitarios/gera_referencias.py --extrair --xlsx NEAR.xlsx \\
+        --raiz-corpus "E:\\todos os textos"
+    python utilitarios/gera_referencias.py --formatar \\
+        --entrada dados/referencias/referencias_rascunho.tsv \\
+        --saida dados/referencias/referencias_apa7.tsv \\
+        --md dados/referencias/referencias_apa7.md \\
+        --docx "C:\\caminho\\Referencias_APA7.docx"
 
-    python utilitarios/gera_referencias.py --extrair \\
-        --xlsx UNIFORME_near.xlsx --raiz-corpus "E:\\todos os textos"
-
-Princípio: nunca inventar metadados. Campo preenchido exige ``evidencia_*``.
+Princípio: nunca inventar metadados.
 """
 
 from __future__ import annotations
@@ -25,10 +28,15 @@ if str(ROOT) not in sys.path:
 
 from textura.referencias import (  # noqa: E402
     chaves_doc_id,
+    construir_apa7,
     construir_inventario,
     construir_rascunho,
+    escrever_apa7_docx,
+    escrever_apa7_md,
+    escrever_apa7_tsv,
     escrever_inventario_tsv,
     escrever_rascunho_tsv,
+    relatorio_apa7,
     relatorio_inventario,
     relatorio_rascunho,
 )
@@ -67,16 +75,9 @@ def cmd_inventario(args: argparse.Namespace) -> int:
     saida = Path(args.saida) if args.saida else (
         ROOT / "dados" / "referencias" / "inventario.tsv")
     escrever_inventario_tsv(inv, saida)
-
     print(relatorio_inventario(inv, n_ref), flush=True)
     print(f"escrito: {saida}", flush=True)
-    if len(inv) != n_ref:
-        print(
-            f"ERRO: inventário ({len(inv)}) ≠ doc_id esperados ({n_ref})",
-            file=sys.stderr,
-        )
-        return 1
-    return 0
+    return 0 if len(inv) == n_ref else 1
 
 
 def cmd_extrair(args: argparse.Namespace) -> int:
@@ -105,21 +106,34 @@ def cmd_extrair(args: argparse.Namespace) -> int:
     saida = Path(args.saida) if args.saida else (
         ROOT / "dados" / "referencias" / "referencias_rascunho.tsv")
     escrever_rascunho_tsv(rasc, saida)
-
     print(relatorio_rascunho(rasc), flush=True)
     print(f"escrito: {saida}", flush=True)
     if args.permitir_web:
-        print(
-            "AVISO: --permitir-web activo — campos vazios puderam ser "
-            "preenchidos via doi.org/Crossref (evidencia=doi_org).",
-            flush=True,
-        )
-    if len(rasc) != n_ref:
-        print(
-            f"ERRO: rascunho ({len(rasc)}) ≠ doc_id esperados ({n_ref})",
-            file=sys.stderr,
-        )
-        return 1
+        print("AVISO: --permitir-web activo (evidencia=doi_org).", flush=True)
+    return 0 if len(rasc) == n_ref else 1
+
+
+def cmd_formatar(args: argparse.Namespace) -> int:
+    entrada = Path(args.entrada) if args.entrada else (
+        ROOT / "dados" / "referencias" / "referencias_rascunho.tsv")
+    if not entrada.is_file():
+        print(f"TSV não encontrado: {entrada}", file=sys.stderr)
+        return 2
+    import pandas as pd
+    df = pd.read_csv(entrada, sep="\t", dtype=str).fillna("")
+    apa = construir_apa7(df)
+    saida = Path(args.saida) if args.saida else (
+        ROOT / "dados" / "referencias" / "referencias_apa7.tsv")
+    escrever_apa7_tsv(apa, saida)
+    print(relatorio_apa7(apa), flush=True)
+    print(f"escrito: {saida}", flush=True)
+
+    if args.md:
+        p = escrever_apa7_md(apa, Path(args.md), titulo=args.titulo_doc)
+        print(f"escrito: {p}", flush=True)
+    if args.docx:
+        p = escrever_apa7_docx(apa, Path(args.docx), titulo=args.titulo_doc)
+        print(f"escrito: {p}", flush=True)
     return 0
 
 
@@ -130,44 +144,36 @@ def main(argv: list[str] | None = None) -> int:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     modo = ap.add_mutually_exclusive_group(required=True)
-    modo.add_argument(
-        "--inventario", action="store_true",
-        help="Fase 0: agrupar 8_Concordancia por doc_id → inventario.tsv",
-    )
-    modo.add_argument(
-        "--extrair", action="store_true",
-        help="Fase 1: extracção com evidência → referencias_rascunho.tsv",
-    )
-    ap.add_argument("--xlsx", type=Path, required=True,
-                    help="Excel com folha 8_Concordancia")
-    ap.add_argument("--folha", default=None,
-                    help="folha (omissão: 8_Concordancia)")
-    ap.add_argument(
-        "--saida", type=Path, default=None,
-        help="TSV de saída (omissão sob dados/referencias/)",
-    )
-    ap.add_argument(
-        "--raiz-corpus", type=Path, default=None,
-        help="raiz local que substitui o prefixo E:\\todos os textos (CI)",
-    )
-    ap.add_argument(
-        "--prefixo-origem", action="append", default=None,
-        help="prefixo a remapear (repetível; omissão: corpus E: padrão)",
-    )
-    ap.add_argument(
-        "--sem-ler-pdf", action="store_true",
-        help="(--inventario) não abrir PDFs para tipo_provavel",
-    )
-    ap.add_argument(
-        "--permitir-web", action="store_true",
-        help="(--extrair) resolver DOIs já presentes no PDF via doi.org/Crossref",
-    )
+    modo.add_argument("--inventario", action="store_true")
+    modo.add_argument("--extrair", action="store_true")
+    modo.add_argument("--formatar", action="store_true",
+                      help="Fase 3: TSV rascunho/revisto → APA 7 + citação curta")
+    ap.add_argument("--xlsx", type=Path, default=None)
+    ap.add_argument("--folha", default=None)
+    ap.add_argument("--saida", type=Path, default=None)
+    ap.add_argument("--entrada", type=Path, default=None,
+                    help="(--formatar) TSV de entrada")
+    ap.add_argument("--md", type=Path, default=None,
+                    help="(--formatar) pré-visualização Markdown")
+    ap.add_argument("--docx", type=Path, default=None,
+                    help="(--formatar) bibliografia DOCX autónoma")
+    ap.add_argument("--titulo-doc", default="Referências",
+                    help="título do documento MD/DOCX")
+    ap.add_argument("--raiz-corpus", type=Path, default=None)
+    ap.add_argument("--prefixo-origem", action="append", default=None)
+    ap.add_argument("--sem-ler-pdf", action="store_true")
+    ap.add_argument("--permitir-web", action="store_true")
     args = ap.parse_args(argv)
 
+    if args.inventario or args.extrair:
+        if args.xlsx is None:
+            ap.error("--xlsx é obrigatório com --inventario/--extrair")
     if args.inventario:
         return cmd_inventario(args)
     if args.extrair:
         return cmd_extrair(args)
+    if args.formatar:
+        return cmd_formatar(args)
     return 2
 
 

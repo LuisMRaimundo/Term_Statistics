@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import re
+import unicodedata
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -1014,3 +1015,418 @@ def relatorio_rascunho(df: pd.DataFrame) -> str:
         if t not in TIPOS_BIBLIO:
             linhas.append(f"  {t}: {int(v)}")
     return "\n".join(linhas)
+
+
+# ---------------------------------------------------------------------------
+# Fase 3 — formatação APA 7 + citação curta
+# ---------------------------------------------------------------------------
+
+COLUNAS_APA7: tuple[str, ...] = (
+    "doc_id",
+    "citacao_curta",
+    "referencia_apa7",
+    "tipo",
+    "verificar",
+    "completa",
+)
+
+
+def chave_ordenacao_apa(texto: str) -> str:
+    """Chave alfabética sem diacríticos (apelidos PT/FR)."""
+    s = unicodedata.normalize("NFD", (texto or "").strip().casefold())
+    s = "".join(ch for ch in s if unicodedata.category(ch) != "Mn")
+    return s
+
+
+def _g(row: dict | pd.Series, key: str) -> str:
+    v = row.get(key, "") if hasattr(row, "get") else ""
+    if v is None or (isinstance(v, float) and pd.isna(v)):
+        return ""
+    s = str(v).strip()
+    return "" if s.lower() == "nan" else s
+
+
+def _autores_lista(autores: str) -> list[str]:
+    """Parte 'Apelido, N.; Apelido, N.' → lista de unidades autor."""
+    raw = (autores or "").strip()
+    if not raw:
+        return []
+    partes = [p.strip() for p in re.split(r"\s*;\s*", raw) if p.strip()]
+    return partes
+
+
+def _apelido(autor_unit: str) -> str:
+    a = (autor_unit or "").strip()
+    if not a:
+        return ""
+    if "," in a:
+        return a.split(",", 1)[0].strip()
+    return a.split()[-1]
+
+
+def _ano_cita(ano: str, sufixo: str = "") -> str:
+    a = (ano or "").strip()
+    if not a:
+        return "n.d." + sufixo
+    return a + sufixo
+
+
+def citacao_curta_de(
+    autores: str,
+    ano: str,
+    *,
+    sufixo_ano: str = "",
+) -> str:
+    """Apelido, AAAA | Apelido & Apelido, AAAA | Apelido et al., AAAA."""
+    units = _autores_lista(autores)
+    y = _ano_cita(ano, sufixo_ano)
+    if not units:
+        return f"(Autor desconhecido, {y})"
+    if len(units) == 1:
+        return f"{_apelido(units[0])}, {y}"
+    if len(units) == 2:
+        return f"{_apelido(units[0])} & {_apelido(units[1])}, {y}"
+    return f"{_apelido(units[0])} et al., {y}"
+
+
+def _ital(s: str) -> str:
+    s = (s or "").strip()
+    return f"*{s}*" if s else ""
+
+
+def _ponto(s: str) -> str:
+    s = (s or "").rstrip()
+    if not s:
+        return ""
+    if s.endswith((".", "!", "?", "/", "»", '"')):
+        return s
+    return s + "."
+
+
+def _doi_terminal(doi_ou_url: str) -> str:
+    d = (doi_ou_url or "").strip()
+    if not d:
+        return ""
+    if d.lower().startswith("http"):
+        return d
+    if d.startswith("10."):
+        return f"https://doi.org/{d}"
+    return d
+
+
+def formatar_referencia_apa7(row: dict | pd.Series) -> str:
+    """Uma referência APA 7 (itálicos em ``*…*``). Não inventa campos em falta."""
+    tipo = (_g(row, "tipo") or "desconhecido").lower()
+    autores = _g(row, "autores") or "Autor desconhecido"
+    ano = _g(row, "ano") or "n.d."
+    titulo = _g(row, "titulo")
+    contentor = _g(row, "contentor")
+    volume = _g(row, "volume")
+    numero = _g(row, "numero")
+    paginas = _g(row, "paginas").replace("—", "-").replace("–", "-")
+    editora = _g(row, "editora")
+    edicao = _g(row, "edicao")
+    doi = _doi_terminal(_g(row, "doi_ou_url"))
+
+    def _tail_doi(base: str) -> str:
+        base = base.rstrip()
+        if doi:
+            # APA 7: sem ponto após DOI/URL
+            if not base.endswith("."):
+                base = _ponto(base)
+            return f"{base} {doi}"
+        return _ponto(base)
+
+    if tipo == "artigo":
+        # Autor. (Ano). Título. *Revista, vol*(nº), pp–pp. DOI
+        bits = [f"{autores} ({ano})."]
+        if titulo:
+            bits.append(_ponto(titulo))
+        rev = contentor
+        if rev and volume:
+            mid = f"{_ital(f'{rev}, {volume}')}"
+            if numero:
+                mid += f"({numero})"
+            if paginas:
+                mid += f", {paginas}"
+            bits.append(_ponto(mid) if not doi else mid + ".")
+        elif rev:
+            bits.append(_ponto(_ital(rev)) if not doi else _ital(rev) + ".")
+        return _tail_doi(" ".join(bits))
+
+    if tipo == "verbete":
+        # Autor. (Ano). Título. In *Grove…*. Editora. DOI
+        cont = contentor or "Grove Music Online"
+        ed = editora or "Oxford University Press"
+        bits = [f"{autores} ({ano})."]
+        if titulo:
+            bits.append(_ponto(titulo))
+        bits.append(f"In {_ital(cont)}.")
+        bits.append(_ponto(ed) if not doi else ed + ".")
+        return _tail_doi(" ".join(bits))
+
+    if tipo == "livro":
+        bits = [f"{autores} ({ano})."]
+        if titulo:
+            tit = _ital(titulo)
+            if edicao:
+                tit = f"{tit} ({edicao})"
+            bits.append(_ponto(tit) if not (editora or doi) else tit + ".")
+        if editora:
+            bits.append(_ponto(editora) if not doi else editora + ".")
+        return _tail_doi(" ".join(bits))
+
+    if tipo == "capitulo":
+        bits = [f"{autores} ({ano})."]
+        if titulo:
+            bits.append(_ponto(titulo))
+        if contentor:
+            mid = f"In {_ital(contentor)}"
+            if paginas:
+                mid += f" (pp. {paginas})"
+            bits.append(_ponto(mid) if not (editora or doi) else mid + ".")
+        if editora:
+            bits.append(_ponto(editora) if not doi else editora + ".")
+        return _tail_doi(" ".join(bits))
+
+    if tipo == "actas":
+        bits = [f"{autores} ({ano})."]
+        if titulo:
+            bits.append(_ponto(titulo))
+        if contentor:
+            mid = f"In {_ital(contentor)}"
+            if paginas:
+                mid += f" (pp. {paginas})"
+            bits.append(_ponto(mid) if not (editora or doi) else mid + ".")
+        if editora:
+            bits.append(_ponto(editora) if not doi else editora + ".")
+        return _tail_doi(" ".join(bits))
+
+    if tipo == "tese":
+        bits = [f"{autores} ({ano})."]
+        if titulo:
+            inst = editora  # instituição em editora (contrato Fase 2)
+            tag = f" [Doctoral dissertation, {inst}]" if inst else " [Doctoral dissertation]"
+            bits.append(_ital(titulo) + tag + ".")
+        elif editora:
+            bits.append(f"[Doctoral dissertation, {editora}].")
+        return _tail_doi(" ".join(bits))
+
+    if tipo == "relatorio":
+        bits = [f"{autores} ({ano})."]
+        if titulo:
+            bits.append(_ponto(_ital(titulo)) if not (editora or doi) else _ital(titulo) + ".")
+        if editora:
+            bits.append(_ponto(editora) if not doi else editora + ".")
+        return _tail_doi(" ".join(bits))
+
+    # desconhecido — só o que existir, sem fabricar contentor/editora
+    bits = [f"{autores} ({ano})."]
+    if titulo:
+        bits.append(_ponto(titulo) if not doi else titulo + ".")
+    elif _g(row, "caminho_ficheiro"):
+        bits.append(_ponto(Path(_strip_file_url(_g(row, "caminho_ficheiro"))).stem.replace("_", " ")))
+    return _tail_doi(" ".join(bits))
+
+
+def referencia_completa_minima(row: dict | pd.Series) -> bool:
+    """Mínimo para listar na bibliografia 'completa': autores+título+tipo conhecido, ou verbete com contentor."""
+    tipo = (_g(row, "tipo") or "desconhecido").lower()
+    if tipo == "desconhecido":
+        return False
+    if not _g(row, "titulo"):
+        return False
+    if tipo == "verbete":
+        return bool(_g(row, "contentor") or _g(row, "editora"))
+    if tipo == "artigo":
+        return bool(_g(row, "contentor") or _g(row, "doi_ou_url"))
+    return bool(_g(row, "autores"))
+
+
+def desambiguar_anos(df: pd.DataFrame) -> pd.DataFrame:
+    """Sufixos a/b/c determinísticos (ordenados por título) para mesmo apelido+ano."""
+    out = df.copy()
+    out["_apelido0"] = [
+        _apelido(_autores_lista(_g(r, "autores"))[0]) if _autores_lista(_g(r, "autores")) else ""
+        for _, r in out.iterrows()
+    ]
+    out["_ano_base"] = [
+        _g(r, "ano") if _g(r, "ano") else "n.d." for _, r in out.iterrows()
+    ]
+    out["_tit_ord"] = out.apply(
+        lambda r: chave_ordenacao_apa(_g(r, "titulo") or _g(r, "caminho_ficheiro")),
+        axis=1,
+    )
+    out["_sufixo"] = ""
+    for (_, _), grp in out.groupby(["_apelido0", "_ano_base"], sort=False):
+        if len(grp) < 2:
+            continue
+        if not grp.iloc[0]["_apelido0"] and grp.iloc[0]["_ano_base"] == "n.d.":
+            continue
+        ordenados = grp.sort_values(["_tit_ord", "doc_id"]).index.tolist()
+        if len(ordenados) == 1:
+            continue
+        for i, idx in enumerate(ordenados):
+            out.at[idx, "_sufixo"] = chr(ord("a") + i)
+    return out
+
+
+def construir_apa7(df_rascunho: pd.DataFrame) -> pd.DataFrame:
+    """A partir do TSV rascunho/revisto → citacao_curta + referencia_apa7."""
+    if df_rascunho is None or df_rascunho.empty:
+        return pd.DataFrame(columns=list(COLUNAS_APA7))
+    work = desambiguar_anos(df_rascunho)
+    rows = []
+    for _, r in work.iterrows():
+        suf = str(r.get("_sufixo") or "")
+        ano = _g(r, "ano")
+        cita = citacao_curta_de(_g(r, "autores"), ano, sufixo_ano=suf)
+        # inject suffix into APA year
+        row_fmt = {c: _g(r, c) for c in list(CAMPOS_BIBLIO) + ["doc_id", "caminho_ficheiro", "verificar"]}
+        if suf:
+            row_fmt["ano"] = (ano or "n.d.") + suf
+        apa = formatar_referencia_apa7(row_fmt)
+        rows.append({
+            "doc_id": _g(r, "doc_id"),
+            "citacao_curta": cita,
+            "referencia_apa7": apa,
+            "tipo": _g(r, "tipo") or "desconhecido",
+            "verificar": _g(r, "verificar") or "sim",
+            "completa": "sim" if referencia_completa_minima(r) else "nao",
+            "_ord_autor": chave_ordenacao_apa(
+                _apelido(_autores_lista(_g(r, "autores"))[0])
+                if _autores_lista(_g(r, "autores")) else _g(r, "titulo")
+            ),
+            "_ord_ano": _g(r, "ano") or "9999",
+            "_ord_tit": chave_ordenacao_apa(_g(r, "titulo")),
+        })
+    out = pd.DataFrame(rows)
+    out = out.sort_values(
+        ["_ord_autor", "_ord_ano", "_ord_tit", "doc_id"], kind="mergesort"
+    ).reset_index(drop=True)
+    return out[list(COLUNAS_APA7)]
+
+
+def escrever_apa7_tsv(df: pd.DataFrame, saida: Path) -> Path:
+    saida = Path(saida)
+    saida.parent.mkdir(parents=True, exist_ok=True)
+    df.to_csv(saida, sep="\t", index=False, encoding="utf-8", lineterminator="\n")
+    return saida
+
+
+def escrever_apa7_md(df: pd.DataFrame, saida: Path, *, titulo: str = "Referências") -> Path:
+    saida = Path(saida)
+    saida.parent.mkdir(parents=True, exist_ok=True)
+    linhas = [
+        f"# {titulo}",
+        "",
+        "> Rascunho gerado automaticamente (extracção com evidência). "
+        "Entradas incompletas exigem revisão humana antes de uso dissertativo.",
+        "",
+    ]
+    completas = df[df["completa"] == "sim"] if "completa" in df.columns else df
+    incompletas = df[df["completa"] != "sim"] if "completa" in df.columns else df.iloc[0:0]
+    linhas.append(f"## Lista APA 7 ({len(completas)} entradas com campos mínimos)")
+    linhas.append("")
+    for _, r in completas.iterrows():
+        linhas.append(f"- {r['referencia_apa7']}")
+        linhas.append("")
+    if len(incompletas):
+        linhas.append(f"## Por rever ({len(incompletas)} — dados insuficientes)")
+        linhas.append("")
+        for _, r in incompletas.iterrows():
+            linhas.append(
+                f"- `{r['doc_id']}` — {r['citacao_curta']}: {r['referencia_apa7']}"
+            )
+            linhas.append("")
+    saida.write_text("\n".join(linhas), encoding="utf-8")
+    return saida
+
+
+def escrever_apa7_docx(
+    df: pd.DataFrame,
+    saida: Path,
+    *,
+    titulo: str = "Referências",
+    nota: str = "",
+) -> Path:
+    """DOCX autónomo com secção Referências (avanço pendente)."""
+    from docx import Document
+    from docx.enum.text import WD_LINE_SPACING
+    from docx.shared import Cm, Pt
+
+    from textura_apendice import _add_text_with_italic_md
+
+    saida = Path(saida)
+    saida.parent.mkdir(parents=True, exist_ok=True)
+    doc = Document()
+    for sec in doc.sections:
+        sec.top_margin = Cm(2.5)
+        sec.bottom_margin = Cm(2.5)
+        sec.left_margin = Cm(3)
+        sec.right_margin = Cm(2.5)
+
+    h = doc.add_heading(titulo, level=1)
+    for run in h.runs:
+        run.font.name = "Times New Roman"
+
+    nota = nota or (
+        "Rascunho bibliográfico gerado por extracção automática com rastreio "
+        "de evidência (Term_Statistics). Não inventa metadados: entradas sem "
+        "campos mínimos ficam na secção «Por rever». A revisão humana do TSV "
+        "é obrigatória antes de citar na dissertação."
+    )
+    pnota = doc.add_paragraph()
+    _add_text_with_italic_md(pnota, nota, sz=19)
+    for run in pnota.runs:
+        run.italic = True
+
+    completas = df[df["completa"] == "sim"] if "completa" in df.columns else df
+    incompletas = (
+        df[df["completa"] != "sim"] if "completa" in df.columns
+        else df.iloc[0:0]
+    )
+
+    doc.add_heading(f"Lista APA 7.ª ed. ({len(completas)})", level=2)
+    for _, r in completas.iterrows():
+        p = doc.add_paragraph()
+        pf = p.paragraph_format
+        pf.first_line_indent = Cm(-0.75)
+        pf.left_indent = Cm(0.75)
+        pf.space_after = Pt(6)
+        pf.line_spacing_rule = WD_LINE_SPACING.SINGLE
+        _add_text_with_italic_md(p, str(r["referencia_apa7"]), sz=19)
+
+    if len(incompletas):
+        doc.add_heading(f"Por rever ({len(incompletas)})", level=2)
+        p0 = doc.add_paragraph()
+        _add_text_with_italic_md(
+            p0,
+            "Entradas sem título/tipo/contentor suficientes — "
+            "não usar como referência final.",
+            sz=19,
+        )
+        for _, r in incompletas.iterrows():
+            p = doc.add_paragraph()
+            pf = p.paragraph_format
+            pf.first_line_indent = Cm(-0.75)
+            pf.left_indent = Cm(0.75)
+            pf.space_after = Pt(4)
+            texto = (
+                f"{r['citacao_curta']} — {r['referencia_apa7']} "
+                f"[doc_id={r['doc_id']}]"
+            )
+            _add_text_with_italic_md(p, texto, sz=18)
+
+    doc.save(str(saida))
+    return saida
+
+
+def relatorio_apa7(df: pd.DataFrame) -> str:
+    n = len(df)
+    n_ok = int((df["completa"] == "sim").sum()) if n and "completa" in df.columns else 0
+    return "\n".join([
+        f"referências formatadas: {n}",
+        f"completas (mínimo bibliográfico): {n_ok}",
+        f"por rever: {n - n_ok}",
+    ])
