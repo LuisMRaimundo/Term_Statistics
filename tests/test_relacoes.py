@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import re
 import unittest
 
 import pytest
@@ -110,6 +111,48 @@ class TestDependencias(unittest.TestCase):
         self.assertEqual(r["relacao_sintactica"], "incidental")
         self.assertFalse(r["nuclear"])
         self.assertIn(r["governante"].lower(), {"block", "harmonic"})
+
+    def test_obliqua_texture_with_stability(self):
+        r = self._classifica(
+            "the opening texture with stability and presentation",
+            "texture", "stability")
+        self.assertEqual(r["relacao_sintactica"], "obliqua")
+        self.assertTrue(r["nuclear"])
+        self.assertTrue(re.search(r"textur", r["nucleo_da_propriedade"], re.I))
+        self.assertEqual(r["percurso_dep"], "stability/pobj->with/prep->texture")
+
+    def test_nucleo_funcional_sobe_para_nome_lexical(self):
+        r = self._classifica(
+            "our association of the opening texture with stability "
+            "and presentation",
+            "texture", "stability")
+        self.assertNotIn(r["nucleo_da_propriedade"].lower(), {
+            "with", "of", "by", "from"})
+        self.assertIn("prep->", r["percurso_dep"])
+        if re.search(r"^textur", r["nucleo_da_propriedade"], re.I):
+            self.assertEqual(r["relacao_sintactica"], "obliqua")
+            self.assertTrue(r["nuclear"])
+        else:
+            self.assertFalse(r["nuclear"])
+
+    def test_sobe_preposicao_by_stability(self):
+        r = self._classifica(
+            "classification of textural events by their stability",
+            "textural", "stability")
+        self.assertNotIn(r["nucleo_da_propriedade"].lower(), {
+            "by", "of", "with", "from", "in", "to", "on", "as", "that", "is"})
+        if re.search(r"^textur", r["nucleo_da_propriedade"], re.I):
+            self.assertEqual(r["relacao_sintactica"], "obliqua")
+            self.assertTrue(r["nuclear"])
+        else:
+            self.assertFalse(r["nuclear"])
+
+    def test_genitiva_nao_vira_obliqua(self):
+        r = self._classifica(
+            "a general tendency toward uniformity of texture",
+            "texture", "uniformity")
+        self.assertEqual(r["relacao_sintactica"], "nominal_genitiva")
+        self.assertTrue(r["nuclear"])
 
     def test_negacao_no_opus(self):
         ctx = "piece for orchestra no. 1 (1961), consist of static textures"

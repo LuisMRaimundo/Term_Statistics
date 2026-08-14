@@ -27,6 +27,11 @@ ACCENT = "#2F5D50"
 ACCENT_WARM = "#8B5E3C"
 ACCENT_COOL = "#3A536B"
 SERIES = ["#2F5D50", "#8B5E3C", "#3A536B", "#6B7C8A", "#A67C52"]
+# Paleta de famílias lexicais (cor = hash estável de canonical_term)
+PAL_FAMILIA = [
+    "#1F3D36", "#2F5D50", "#3A536B", "#5A4634", "#2A4A42", "#4A3A2A",
+    "#6B3A2A", "#3D5A4C", "#4A3F5C", "#7A5A32", "#2C4A5A", "#5C4A3A",
+]
 
 _CMAP_DOCS = LinearSegmentedColormap.from_list(
     "textura_docs", ["#A8C4B8", "#2F5D50"])
@@ -154,6 +159,26 @@ def embeber_imagens(ws, caminhos, *, largura_px: int = EXCEL_LARGURA_PX,
     return linha
 
 
+def cor_canonical(term: str) -> str:
+    """Cor determinística da família lexical (``canonical_term``)."""
+    import zlib
+    return PAL_FAMILIA[zlib.crc32(str(term or "").encode("utf-8")) % len(PAL_FAMILIA)]
+
+
+def cores_por_forma(familia: dict) -> dict:
+    """``matched_form`` → hex, derivado do ``canonical_term``."""
+    return {form: cor_canonical(term) for form, term in (familia or {}).items()}
+
+
+def _clarear_hex(hex_cor: str, frac: float = 0.42) -> str:
+    h = hex_cor.lstrip("#")
+    r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    r = int(r + (255 - r) * frac)
+    g = int(g + (255 - g) * frac)
+    b = int(b + (255 - b) * frac)
+    return f"#{r:02X}{g:02X}{b:02X}"
+
+
 def barras_horizontais(rotulos, valores, destino: Path, *,
                        titulo: str, subtitulo: str = "",
                        xlabel: str = "Ocorrências",
@@ -164,8 +189,12 @@ def barras_horizontais(rotulos, valores, destino: Path, *,
     if not rotulos:
         return
     pares = sorted(zip(valores, rotulos), key=lambda t: -t[0])
+    n_orig = len(pares)
     if max_n is not None:
         pares = pares[:max_n]
+        if max_n < n_orig:
+            extra = f"showing {max_n} of {n_orig} terms; bar cap = {max_n}"
+            subtitulo = f"{subtitulo} · {extra}".strip(" ·")
     valores = [p[0] for p in pares]
     rotulos = [p[1] for p in pares]
     n = len(rotulos)
@@ -200,6 +229,62 @@ def barras_horizontais(rotulos, valores, destino: Path, *,
                 fontfamily="sans-serif", zorder=4)
 
     ax.set_xlim(0, xmax * 1.14)
+    _acabar(fig, ax, destino, titulo=titulo, subtitulo=subtitulo, rodape=rodape)
+
+
+def barras_horizontais_agrupadas(
+    rotulos, valores_a, valores_b, destino: Path, *,
+    titulo: str, subtitulo: str = "",
+    nome_a: str = "N_hits", nome_b: str = "n_documentos",
+    xlabel: str = "Ocorrências",
+    rodape: str = "TEXTURA · análise de corpus",
+    max_n: int | None = None,
+    cores: list | None = None,
+):
+    """Barras horizontais emparelhadas (frequência vs dispersão documental)."""
+    aplicar_estilo()
+    if not rotulos:
+        return
+    if cores is None:
+        cores = [cor_canonical(r) for r in rotulos]
+    pares = sorted(
+        zip(valores_a, valores_b, rotulos, cores), key=lambda t: -t[0])
+    n_orig = len(rotulos)
+    if max_n is not None:
+        pares = pares[:max_n]
+        if max_n < n_orig:
+            extra = f"showing {max_n} of {n_orig} terms; bar cap = {max_n}"
+            subtitulo = f"{subtitulo} · {extra}".strip(" ·")
+    valores_a = [p[0] for p in pares]
+    valores_b = [p[1] for p in pares]
+    rotulos = [p[2] for p in pares]
+    cores = [p[3] for p in pares]
+    n = len(rotulos)
+    alt = max(3.5, min(28.0, 0.38 * n + 1.6))
+    fig, ax = plt.subplots(figsize=(8.5, alt))
+    y = np.arange(n)
+    ordem = np.argsort(np.asarray(valores_a, dtype=float))
+    labs = [rotulos[i] for i in ordem]
+    va = np.asarray(valores_a, dtype=float)[ordem]
+    vb = np.asarray(valores_b, dtype=float)[ordem]
+    cores_ord = [cores[i] for i in ordem]
+    cores_b = [_clarear_hex(c) for c in cores_ord]
+    h = 0.36
+    ax.barh(y - h / 2, va, height=h, color=cores_ord, edgecolor="none",
+            label=nome_a, zorder=3)
+    ax.barh(y + h / 2, vb, height=h, color=cores_b, edgecolor="none",
+            label=nome_b, zorder=3)
+    ax.set_yticks(y)
+    ax.set_yticklabels(labs)
+    ax.set_xlabel(xlabel)
+    ax.xaxis.set_major_locator(mticker.MaxNLocator(integer=True, nbins=6))
+    ax.grid(axis="x", zorder=0)
+    ax.set_axisbelow(True)
+    ax.set_ylim(-0.7, n - 0.3)
+    xmax = float(max(va.max() if len(va) else 1, vb.max() if len(vb) else 1, 1))
+    ax.set_xlim(0, xmax * 1.18)
+    ax.legend(loc="lower right", frameon=True, fancybox=False,
+              edgecolor=RULE, facecolor=PANEL, framealpha=0.95)
     _acabar(fig, ax, destino, titulo=titulo, subtitulo=subtitulo, rodape=rodape)
 
 
@@ -506,38 +591,51 @@ def nuvem_palavras(frequencias: dict, destino: Path, *,
                    titulo: str = "Nuvem de formas casadas",
                    subtitulo: str = "Tamanho proporcional à frequência",
                    rodape: str = "TEXTURA · análise de corpus",
-                   max_words: int = 80):
+                   max_words: int | None = None,
+                   random_state: int = 20260725,
+                   cores_por_palavra: dict | None = None):
     """Nuvem de palavras a partir de {forma: contagem}."""
     if not frequencias:
         return
+    n_orig = len(frequencias)
+    cap = max_words if max_words is not None else n_orig
+    if max_words is not None and max_words < n_orig:
+        extra = f"showing {max_words} of {n_orig} forms; word cap = {max_words}"
+        subtitulo = f"{subtitulo} · {extra}".strip(" ·")
     try:
         from wordcloud import WordCloud
     except ImportError:
         # fallback mínimo sem a biblioteca
         aplicar_estilo()
-        top = sorted(frequencias.items(), key=lambda kv: -kv[1])[:20]
+        top_n = cap if max_words is not None else min(20, n_orig)
+        top = sorted(frequencias.items(), key=lambda kv: -kv[1])[:top_n]
+        if max_words is None and n_orig > 20:
+            extra = f"showing 20 of {n_orig} forms; fallback cap = 20"
+            subtitulo = f"{subtitulo} · {extra}".strip(" ·")
         fig, ax = plt.subplots(figsize=(6.4, 3.2))
         labs, vals = zip(*top) if top else ([], [])
         ax.barh(list(labs)[::-1], list(vals)[::-1], color=ACCENT)
-        _acabar(fig, ax, destino, titulo=titulo + " (fallback)", rodape=rodape)
+        _acabar(fig, ax, destino, titulo=titulo + " (fallback)",
+                subtitulo=subtitulo, rodape=rodape)
         return
 
     aplicar_estilo()
-    def _cor_nuvem(*_args, **_kwargs):
-        # tons escuros (legibilidade); evita sage claro sobre fundo claro
-        import random
-        pal = ["#1F3D36", "#2F5D50", "#3A536B", "#5A4634", "#2A4A42", "#4A3A2A"]
-        return random.choice(pal)
+
+    def _cor_nuvem(word, *args, **kwargs):
+        if cores_por_palavra and word in cores_por_palavra:
+            return cores_por_palavra[word]
+        return cor_canonical(word)
 
     wc = WordCloud(
         width=1200, height=560,
         background_color=PAPER,
         prefer_horizontal=0.78,
-        max_words=max_words,
+        max_words=max(cap, 1),
         relative_scaling=0.45,
         min_font_size=12,
         max_font_size=96,
         collocations=False,
+        random_state=random_state,
         color_func=_cor_nuvem,
     ).generate_from_frequencies(frequencias)
 
@@ -606,7 +704,7 @@ def barras_freq(freq: dict, destino: Path, *, titulo: str = "Frequencia"):
 
 
 def pares_forma_obra(df, *, col_forma="matched_form", col_obra="doc_id",
-                     max_pares: int = 80):
+                     max_pares: int | None = None):
     """Lista (forma, obra, peso) a partir da concordancia nuclear."""
     import pandas as pd
     d = df.copy()
@@ -621,17 +719,26 @@ def pares_forma_obra(df, *, col_forma="matched_form", col_obra="doc_id",
         return []
     g = (d.groupby([col_forma, col_obra]).size()
          .reset_index(name="peso")
-         .sort_values("peso", ascending=False)
-         .head(max_pares))
+         .sort_values("peso", ascending=False))
+    if max_pares is not None:
+        g = g.head(max_pares)
     return list(g.itertuples(index=False, name=None))
 
 
-def pares_termo_rel_pol(df, *, max_pares: int = 120):
+def pares_termo_rel_pol(df, *, max_pares: int | None = None):
     """Fluxo termo -> relacao -> polaridade (pares consecutivos)."""
     cols = ("canonical_term", "relacao_sintactica", "polaridade")
     if any(c not in df.columns for c in cols):
         return []
-    d = df.dropna(subset=list(cols)).copy()
+    d = df.copy()
+    for c in cols:
+        s = d[c]
+        vazio = s.isna() | s.astype(str).str.strip().eq("") | (
+            s.astype(str).str.strip().str.lower().isin({"nan", "none", "nat"}))
+        if c == "polaridade":
+            d.loc[vazio, c] = "não adjudicada"
+        else:
+            d.loc[vazio, c] = "não adjudicado"
     out = []
     g1 = (d.groupby(["canonical_term", "relacao_sintactica"]).size()
           .reset_index(name="peso"))
@@ -642,10 +749,13 @@ def pares_termo_rel_pol(df, *, max_pares: int = 120):
     for r in g2.itertuples(index=False):
         out.append((str(r.relacao_sintactica), str(r.polaridade), int(r.peso)))
     out.sort(key=lambda t: -t[2])
-    return out[:max_pares]
+    if max_pares is not None:
+        return out[:max_pares]
+    return out
 
 
-def sankey_html(ligacoes, destino: Path, *, titulo: str = "Sankey"):
+def sankey_html(ligacoes, destino: Path, *, titulo: str = "Sankey",
+                subtitulo: str = ""):
     """Exporta Sankey interactivo (Plotly) e tenta PNG via kaleido."""
     destino = Path(destino)
     destino.parent.mkdir(parents=True, exist_ok=True)
@@ -679,7 +789,10 @@ def sankey_html(ligacoes, destino: Path, *, titulo: str = "Sankey"):
         node=dict(label=nos, pad=12, thickness=14),
         link=dict(source=src, target=tgt, value=val),
     )])
-    fig.update_layout(title_text=titulo, font_size=11, height=560)
+    titulo_html = titulo
+    if subtitulo:
+        titulo_html = f"{titulo}<br><sup>{subtitulo}</sup>"
+    fig.update_layout(title_text=titulo_html, font_size=11, height=560)
     fig.write_html(str(destino), include_plotlyjs="cdn")
     try:
         fig.write_image(str(destino.with_suffix(".png")))

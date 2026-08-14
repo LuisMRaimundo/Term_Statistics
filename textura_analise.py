@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import math
 import re
+import shutil
 import sys
 from collections import Counter
 from datetime import datetime
@@ -46,12 +47,30 @@ MODOS_DEDUPE = (
 )
 
 RELACOES_VALIDAS = sorted(
-    set(tn.RELACOES_NUCLEARES) | set(ttri.RELACOES_NAO_NUCLEARES)
+    set(tn.RELACOES_NUCLEARES) | set(ttri.RELACOES_NAO_NUCLEARES) | {"obliqua"}
 )
 COLS_EDITAVEIS = [
     "relacao_sintactica", "nuclear", "polaridade", "eixo",
     "dominio", "motivo_exclusao",
 ]
+# Folhas que a fase 2 (re)escreve. Qualquer outra folha do Excel de
+# entrada é copiada tal qual (valores, formatação, validações).
+FOLHAS_GERADAS_FASE2 = frozenset({
+    "1_Resumo", "2_Frequencias", "3_Testes", "4_Sintaxe", "5_Coocorrencia",
+    "8_Concordancia", "8_Concordancia_Hits",
+    "9_Associacao", "12_Formas", "13_Regressao", "13_Ajuste_modelo",
+    "15_Perfis", "0_Avisos", "6_Graficos",
+    "6_Graficos_nuvem", "6_Graficos_barras",
+})
+NUVEM_RANDOM_STATE = 20260725
+ROTULO_NAO_ADJUDICADA = "não adjudicada"
+ROTULO_NAO_ADJUDICADO = "não adjudicado"
+CAMPOS_LEXICO_OPCIONAIS = (
+    ("polaridade", ROTULO_NAO_ADJUDICADA, "polaridade"),
+    ("eixo", ROTULO_NAO_ADJUDICADO, "eixo"),
+)
+_TRUE = {"true", "1", "sim", "yes"}
+_FALSE = {"false", "0", "nao", "não", "no"}
 
 
 def _cfg_consola():
@@ -198,6 +217,253 @@ def colinear_deterministica(df, a: str, b: str) -> bool:
         return True
     v = cramers_v(tab)
     return v == v and v >= 0.999
+
+
+def _serie_nao_vazia(serie: pd.Series) -> pd.Series:
+    s = serie.astype(str).str.strip()
+    return ~(
+        serie.isna()
+        | s.eq("")
+        | s.str.lower().isin({"nan", "none", "nat"})
+    )
+
+
+def dv_deterministica_de_canonical(df: pd.DataFrame, col: str) -> tuple[bool, float]:
+    """True se ``col`` é função de ``canonical_term`` (V=1 ou 1 valor)."""
+    if col not in df.columns or "canonical_term" not in df.columns:
+        return False, float("nan")
+    mask = _serie_nao_vazia(df[col])
+    sub = df.loc[mask, ["canonical_term", col]]
+    if sub.empty:
+        return False, float("nan")
+    n_obs = int(sub[col].astype(str).str.strip().str.lower().nunique())
+    if n_obs <= 1:
+        return True, 1.0
+    if colinear_deterministica(sub, "canonical_term", col):
+        tab = pd.crosstab(sub["canonical_term"], sub[col])
+        v = cramers_v(tab)
+        return True, (1.0 if v != v else float(v))
+    return False, float("nan")
+
+
+def _linha_teste_omitido(familia: str, col: str, v: float) -> dict:
+    nome = "polarity" if col == "polaridade" else col
+    vtxt = "1" if (v != v or v >= 0.999) else f"{v:.3f}"
+    return {
+        "familia": familia,
+        "teste": (
+            f"omitted: {nome} is a deterministic function of "
+            f"canonical_term (Cramér's V = {vtxt})"
+        ),
+        "estatistica": "",
+        "dimensao_efeito": "",
+        "p": float("nan"),
+        "metodo": "",
+    }
+
+
+def _aviso_teste_omitido(familia: str, col: str) -> str:
+    return (
+        f"teste {familia} omitido: {col} é função determinística de "
+        f"canonical_term (Cramér's V = 1). Não é falha; o teste não se aplica."
+    )
+
+
+def _parse_bool_override(v):
+    """TRUE/FALSE humano; None se vazio ou marca de revisor (ex. LR)."""
+    if v is None or (isinstance(v, float) and v != v):
+        return None
+    if isinstance(v, bool):
+        return v
+    s = str(v).strip().lower()
+    if s in _TRUE:
+        return True
+    if s in _FALSE:
+        return False
+    return None
+
+
+def aplicar_override_revisto(conc: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
+    """``revisto_por_humano`` TRUE/FALSE prevalece sobre ``nuclear``."""
+    if "revisto_por_humano" not in conc.columns or "nuclear" not in conc.columns:
+        return conc, []
+    out = conc.copy()
+    logs = []
+    for i, row in out.iterrows():
+        humano = _parse_bool_override(row.get("revisto_por_humano"))
+        if humano is None:
+            continue
+        computado = bool(
+            row.get("nuclear") is True
+            or str(row.get("nuclear")).lower() in _TRUE
+        )
+        out.at[i, "nuclear"] = humano
+        hit = row.get("hit_key", i)
+        logs.append(
+            f"override revisto_por_humano: hit_key={hit} "
+            f"nuclear_computado={computado} nuclear_humano={humano}"
+        )
+    return out, logs
+
+
+def gini_index(values) -> float:
+    x = np.asarray(list(values), dtype=float)
+    x = x[np.isfinite(x)]
+    if x.size == 0 or float(x.sum()) <= 0:
+        return float("nan")
+    x = np.sort(x)
+    n = x.size
+    return float((2.0 * np.sum(np.arange(1, n + 1) * x)) / (n * x.sum())
+                 - (n + 1) / n)
+
+
+def _mascara_lexico_vazio(serie: pd.Series) -> pd.Series:
+    return ~_serie_nao_vazia(serie)
+
+
+def _aviso_campo_nao_adjudicado(df: pd.DataFrame, col: str) -> str | None:
+    if col not in df.columns or "canonical_term" not in df.columns:
+        return None
+    vazias = _mascara_lexico_vazio(df[col])
+    if not bool(vazias.any()):
+        return None
+    cnt = (df.loc[vazias, "canonical_term"].astype(str)
+           .value_counts())
+    partes = " · ".join(f"{t} {int(n)}" for t, n in cnt.items())
+    return (
+        f"{col} não adjudicada no léxico ({int(vazias.sum())} hits; "
+        f"{int(cnt.size)} termos): {partes}"
+    )
+
+
+def _preencher_lexico_vazio(df: pd.DataFrame, col: str, rotulo: str) -> pd.DataFrame:
+    d = df.copy()
+    if col not in d.columns:
+        return d
+    d.loc[_mascara_lexico_vazio(d[col]), col] = rotulo
+    return d
+
+
+def _dispersao_por_chave(df: pd.DataFrame, keys: list[str],
+                         col_doc: str) -> pd.DataFrame:
+    if df.empty or col_doc not in df.columns:
+        return pd.DataFrame()
+    rows = []
+    for key_vals, g in df.groupby(keys, dropna=False):
+        if not isinstance(key_vals, tuple):
+            key_vals = (key_vals,)
+        n = len(g)
+        por_doc = g[col_doc].astype(str).value_counts()
+        n_docs = int(por_doc.size)
+        top_n = int(por_doc.iloc[0]) if n_docs else 0
+        rec = {k: v for k, v in zip(keys, key_vals)}
+        rec.update({
+            "n_documentos": n_docs,
+            "hits_por_documento": (
+                round(n / n_docs, 4) if n_docs else float("nan")),
+            "share_doc_maximo": (
+                round(top_n / n, 4) if n else float("nan")),
+            "doc_dominante": (por_doc.index[0] if n_docs else ""),
+        })
+        rows.append(rec)
+    return pd.DataFrame(rows)
+
+
+def _df_pesos_grafico(freq: dict, *, col_forma: str = "forma",
+                      col_peso: str = "peso",
+                      ponderacao: str | None = None,
+                      familia: dict | None = None) -> pd.DataFrame:
+    """Tabela de auditoria: pares exactos passados ao renderer."""
+    rows = []
+    for k, v in (freq or {}).items():
+        rec = {col_forma: k, col_peso: int(v)}
+        if ponderacao is not None:
+            rec["ponderacao"] = ponderacao
+        if familia is not None:
+            rec["canonical_term"] = familia.get(k, "")
+        rows.append(rec)
+    if not rows:
+        cols = [c for c in ("ponderacao", col_forma, "canonical_term", col_peso)
+                if c == col_forma or c == col_peso
+                or (c == "ponderacao" and ponderacao is not None)
+                or (c == "canonical_term" and familia is not None)]
+        return pd.DataFrame(columns=cols)
+    df = pd.DataFrame(rows)
+    by = [c for c in ("ponderacao", col_peso, col_forma) if c in df.columns]
+    asc = [c != col_peso for c in by]
+    return df.sort_values(by, ascending=asc).reset_index(drop=True)
+
+
+def mapa_forma_familia(formas: pd.DataFrame) -> dict:
+    """``matched_form`` → ``canonical_term`` (primeira ocorrência se houver conflito)."""
+    if formas is None or len(formas) == 0:
+        return {}
+    if "matched_form" not in formas.columns or "canonical_term" not in formas.columns:
+        return {}
+    out = {}
+    for form, g in formas.groupby("matched_form", dropna=False):
+        out[form] = str(g["canonical_term"].iloc[0])
+    return out
+
+
+def freq_nuvem_de_formas(formas: pd.DataFrame,
+                         ponderacao: str = "hits") -> dict:
+    """Pesos da nuvem a partir de ``12_Formas``.
+
+    ``ponderacao='hits'`` → ``n``; ``ponderacao='docs'`` → ``n_documentos``.
+    """
+    if formas is None or len(formas) == 0 or "matched_form" not in formas.columns:
+        return {}
+    modo = (ponderacao or "hits").strip().lower()
+    if modo in {"docs", "documentos", "n_documentos"}:
+        col = "n_documentos" if "n_documentos" in formas.columns else (
+            "obras" if "obras" in formas.columns else None)
+        if col is None:
+            return {}
+        return (formas.groupby("matched_form", dropna=False)[col]
+                .max().fillna(0).astype(int).to_dict())
+    col_n = "n" if "n" in formas.columns else None
+    if col_n is None:
+        return {}
+    return (formas.groupby("matched_form", dropna=False)[col_n]
+            .sum().astype(int).to_dict())
+
+
+def _nota_teto(mostrados: int, total: int, *,
+               extra: str = "", cap=None) -> str:
+    if cap is None or mostrados >= total:
+        return ""
+    base = f"showing {mostrados} of {total}"
+    if extra:
+        base = f"{base} ({extra})"
+    return f"{base}; link cap = {cap}"
+
+
+def _anotar_instrucoes_adjudicacao(wb) -> None:
+    if "0_Instrucoes" not in wb.sheetnames:
+        return
+    ws = wb["0_Instrucoes"]
+    chaves = {
+        str(ws.cell(r, 1).value).strip()
+        for r in range(2, ws.max_row + 1)
+        if ws.cell(r, 1).value is not None
+    }
+    pares = [
+        ("adjudicacao_nuclear",
+         "A coluna nuclear é o veredicto automático da fase 1. "
+         "revisto_por_humano, quando TRUE ou FALSE, prevalece sobre nuclear; "
+         "vazio = usar nuclear. Cada override é registado em 0_Avisos "
+         "(hit_key, valor computado, valor humano)."),
+        ("coluna_adjudicacao",
+         "Adjudicação humana: revisto_por_humano (TRUE/FALSE). "
+         "nuclear permanece o juízo automático."),
+    ]
+    for chave, valor in pares:
+        if chave in chaves:
+            continue
+        r = ws.max_row + 1
+        ws.cell(r, 1).value = chave
+        ws.cell(r, 2).value = valor
 
 
 def teste_contingencia(tab: pd.DataFrame, n_perm: int = 20000, semente=20260725,
@@ -462,13 +728,14 @@ def analisar(xlsx: Path, saida: Path | None = None,
     info = validar_fase1(xlsx, estrito=estrito)
     conc = info["conc"]
     meta = info["meta"]
-    rev = comparar_revisao(conc, meta)
     consulta = str(meta.get("consulta", meta.get("query", "")) or "")
     leg = tleg.carregar(legendas, consulta=consulta)
 
     # conjuntos
     conc["nuclear"] = conc["nuclear"].map(
         lambda v: v is True or str(v).lower() in {"true", "1", "sim"})
+    conc, logs_override = aplicar_override_revisto(conc)
+    rev = comparar_revisao(conc, meta)
     brutas = conc
     nuc = conc.loc[conc["nuclear"]].copy()
     if relacoes:
@@ -525,6 +792,7 @@ def analisar(xlsx: Path, saida: Path | None = None,
     avisos = []
     if avisos_pre:
         avisos.append(avisos_pre)
+    avisos.extend(logs_override)
     # Folha Hits desactualizada → sincronizar espelho no Excel de revisão
     if "8_Concordancia_Hits" in info.get("sheets", []):
         try:
@@ -557,6 +825,10 @@ def analisar(xlsx: Path, saida: Path | None = None,
             "polaridade é função de canonical_term no léxico adjudicado "
             "(cada termo tem uma só polaridade). Esperado em classes "
             "mono-polares; não é falha da análise.")
+    for col, _rotulo, _fam in CAMPOS_LEXICO_OPCIONAIS:
+        msg_na = _aviso_campo_nao_adjudicado(nuc, col)
+        if msg_na:
+            avisos.append(msg_na)
 
     # --- 2_Frequencias (A2) ----------------------------------------------
     freq_tok = (nuc.groupby("canonical_term")
@@ -564,6 +836,9 @@ def analisar(xlsx: Path, saida: Path | None = None,
                      obras_com_ocorrencia=(col_doc, "nunique"))
                 .sort_values("ocorrencias_token", ascending=False)
                 .reset_index())
+    disp_term = _dispersao_por_chave(nuc, ["canonical_term"], col_doc)
+    if len(disp_term):
+        freq_tok = freq_tok.merge(disp_term, on="canonical_term", how="left")
     # H, J, 1/D sobre ocorrencias_token
     cont_tok = nuc["canonical_term"].value_counts()
     S = int((cont_tok > 0).sum())
@@ -574,7 +849,11 @@ def analisar(xlsx: Path, saida: Path | None = None,
     # --- 3_Testes (A4, A8, A9) -------------------------------------------
     testes = []
     pol = dedup.replace({"polaridade": {"": np.nan}}).dropna(subset=["polaridade"])
-    if len(pol):
+    det_pol, v_pol = dv_deterministica_de_canonical(nuc, "polaridade")
+    if det_pol:
+        testes.append(_linha_teste_omitido("polaridade", "polaridade", v_pol))
+        avisos.append(_aviso_teste_omitido("polaridade", "polaridade"))
+    elif len(pol):
         n_est = int((pol["polaridade"] == "estabilidade").sum())
         n_tot = len(pol)
         # nulo
@@ -641,21 +920,21 @@ def analisar(xlsx: Path, saida: Path | None = None,
                 "(só uma polaridade nas nucleares → colinearidade). "
                 "Não é falha; o teste χ² não se aplica.")
 
-    if ("eixo" in dedup.columns and col_rel in dedup.columns
-            and not any("eixo e funcao" in a for a in avisos)):
-        if colinear_deterministica(dedup, "canonical_term", "eixo"):
-            avisos.append("Teste relacao×eixo bloqueado (eixo=f(canonical_term)).")
-        else:
-            tab = pd.crosstab(dedup[col_rel], dedup["eixo"])
-            r = teste_contingencia(tab)
-            testes.append({
-                "familia": "estrutura_sintactica",
-                "teste": "relacao_sintactica × eixo",
-                "estatistica": r["estatistica"],
-                "dimensao_efeito": f"V_Cramer={r['cramer_v']}",
-                "p": r["p"],
-                "metodo": r["metodo"],
-            })
+    det_eixo, v_eixo = dv_deterministica_de_canonical(dedup, "eixo")
+    if det_eixo:
+        testes.append(_linha_teste_omitido("eixo", "eixo", v_eixo))
+        avisos.append(_aviso_teste_omitido("eixo", "eixo"))
+    elif "eixo" in dedup.columns and col_rel in dedup.columns:
+        tab = pd.crosstab(dedup[col_rel], dedup["eixo"])
+        r = teste_contingencia(tab)
+        testes.append({
+            "familia": "estrutura_sintactica",
+            "teste": "relacao_sintactica × eixo",
+            "estatistica": r["estatistica"],
+            "dimensao_efeito": f"V_Cramer={r['cramer_v']}",
+            "p": r["p"],
+            "metodo": r["metodo"],
+        })
 
     tst_df = pd.DataFrame(testes)
     if len(tst_df):
@@ -790,6 +1069,11 @@ def analisar(xlsx: Path, saida: Path | None = None,
               .agg(n=("matched_form", "size"),
                    obras=(col_doc, "nunique"))
               .reset_index())
+    disp_form = _dispersao_por_chave(
+        nuc, ["canonical_term", "matched_form"], col_doc)
+    if len(disp_form):
+        formas = formas.merge(
+            disp_form, on=["canonical_term", "matched_form"], how="left")
 
     # --- Graficos (B) ----------------------------------------------------
     base = saida.parent
@@ -806,66 +1090,149 @@ def analisar(xlsx: Path, saida: Path | None = None,
            else "")
     )
     g1 = base / "_g_freq_token.png"
+    docs_bar = (list(freq_tok["n_documentos"])
+                if len(freq_tok) and "n_documentos" in freq_tok.columns
+                else list(freq_tok["obras_com_ocorrencia"]) if len(freq_tok)
+                else [])
     try:
         tit_f = str(leg_formas.get("titulo")
                     or "Frequência por termo canónico")
         if f"N={n_nuc}" not in tit_f and "N_hits=" not in tit_f:
             tit_f = f"{tit_f}  ({nota_n})"
         sub_f = str(leg_formas.get("subtitulo") or "")
-        if "N_hits" not in sub_f and "N=" not in sub_f:
-            sub_f = (f"{sub_f} · {nota_n}".strip(" ·")
-                     if sub_f else nota_n)
-        tplot.barras_horizontais(
+        base_sub = (
+            "unidade=canonical_term · conjunto=nuclear "
+            f"(após revisto_por_humano) · sem desduplicação de contexto · N={n_nuc}"
+        )
+        sub_f = f"{sub_f} · {base_sub}".strip(" ·") if sub_f else base_sub
+        tplot.barras_horizontais_agrupadas(
             list(freq_tok["canonical_term"]),
             list(freq_tok["ocorrencias_token"]),
+            docs_bar,
             g1,
             titulo=tit_f,
             subtitulo=sub_f,
-            xlabel=str(leg_formas.get("xlabel") or "Ocorrencias (N_hits)"),
+            nome_a="N_hits",
+            nome_b="n_documentos",
+            xlabel=str(leg_formas.get("xlabel")
+                       or "Ocorrencias (N_hits) e documentos"),
             rodape=rodape,
             max_n=None,
+            cores=[tplot.cor_canonical(t)
+                   for t in freq_tok["canonical_term"]],
         )
         g_msgs.append(f"OK freq token -> {g1.name}")
     except Exception as exc:
         g_msgs.append(f"FALHA freq: {exc}")
+    tab_barras = pd.DataFrame({
+        "canonical_term": list(freq_tok["canonical_term"]) if len(freq_tok) else [],
+        "N_hits": list(freq_tok["ocorrencias_token"]) if len(freq_tok) else [],
+        "n_documentos": docs_bar if len(freq_tok) else [],
+    })
+    if len(tab_barras):
+        tab_barras = tab_barras.sort_values(
+            ["N_hits", "canonical_term"], ascending=[False, True]
+        ).reset_index(drop=True)
 
-    g_nuvem = base / "_g_nuvem.png"
-    try:
-        # variante ponderada por obras (matched_form), ainda sobre nucleares
-        freq_ob = (nuc.groupby("matched_form")[col_doc].nunique().to_dict())
-        tit_n = str(leg_nuvem.get("titulo") or "Nuvem de palavras")
-        sub_n = str(leg_nuvem.get("subtitulo")
-                    or "Tamanho ∝ nº de obras por forma de superfície")
-        if "N_hits" not in sub_n and "N=" not in sub_n:
-            sub_n = f"{sub_n} · {nota_n}".strip(" ·")
-        tplot.nuvem_palavras(
-            freq_ob, g_nuvem,
-            titulo=tit_n,
-            subtitulo=sub_n,
-            rodape=rodape)
-        g_msgs.append(f"OK nuvem -> {g_nuvem.name}")
-    except Exception as exc:
-        g_msgs.append(f"FALHA nuvem: {exc}")
+    familia_nuvem = mapa_forma_familia(formas)
+    cores_nuvem = tplot.cores_por_forma(familia_nuvem)
+    freq_nuvem_hits = freq_nuvem_de_formas(formas, ponderacao="hits")
+    freq_nuvem_docs = freq_nuvem_de_formas(formas, ponderacao="docs")
+    tab_nuvem = pd.concat([
+        _df_pesos_grafico(freq_nuvem_hits, ponderacao="hits",
+                          familia=familia_nuvem),
+        _df_pesos_grafico(freq_nuvem_docs, ponderacao="docs",
+                          familia=familia_nuvem),
+    ], ignore_index=True)
+    g_nuvem_hits = base / "_g_nuvem_hits.png"
+    g_nuvem_docs = base / "_g_nuvem_docs.png"
+    g_nuvem = g_nuvem_hits  # alias: a nuvem por hits é a figura de referência
+    tit_n = str(leg_nuvem.get("titulo") or "Nuvem de palavras")
+    for dest, freq, pond, fonte in (
+        (g_nuvem_hits, freq_nuvem_hits, "N_hits", "12_Formas.n"),
+        (g_nuvem_docs, freq_nuvem_docs, "n_documentos", "12_Formas.n_documentos"),
+    ):
+        try:
+            sub_n = (
+                f"ponderação={pond} ({fonte}) · unidade=matched_form · "
+                "cor=canonical_term · conjunto=nuclear "
+                f"(após revisto_por_humano) · sem desduplicação de contexto · N={n_nuc}"
+            )
+            tplot.nuvem_palavras(
+                freq, dest,
+                titulo=tit_n,
+                subtitulo=sub_n,
+                rodape=rodape,
+                max_words=None,
+                random_state=NUVEM_RANDOM_STATE,
+                cores_por_palavra=cores_nuvem)
+            g_msgs.append(f"OK nuvem {pond} -> {dest.name} ({len(freq)} formas)")
+        except Exception as exc:
+            g_msgs.append(f"FALHA nuvem {pond}: {exc}")
+    if g_nuvem_hits.exists():
+        shutil.copy2(g_nuvem_hits, base / "_g_nuvem.png")
 
     g_sankey1 = base / "_g_sankey_forma_obra.html"
     g_sankey2 = base / "_g_sankey_termo_rel.html"
     try:
-        p1 = tplot.pares_forma_obra(nuc)
+        cap_s1 = None
+        p1 = tplot.pares_forma_obra(nuc, max_pares=cap_s1)
+        n_lig1 = int(sum(w for *_, w in p1)) if p1 else 0
+        n_form_tot = int(nuc["matched_form"].nunique()) if len(nuc) else 0
+        n_doc_tot = int(nuc[col_doc].nunique()) if len(nuc) else 0
+        n_form_show = len({a for a, _, _ in p1})
+        n_doc_show = len({b for _, b, _ in p1})
         tit_s1 = str(leg_sankey.get("titulo")
                      or "Sankey: forma → documento")
         if "N=" not in tit_s1 and "N_hits=" not in tit_s1:
             tit_s1 = f"{tit_s1}  ({nota_n})"
-        tplot.sankey_html(p1, g_sankey1, titulo=tit_s1)
-        p2 = tplot.pares_termo_rel_pol(nuc)
-        tplot.sankey_html(
-            p2, g_sankey2,
-            titulo=f"termo → relação → polaridade  ({nota_n})",
-        )
+        sub_s1 = ""
+        if cap_s1 is not None and n_lig1 < n_nuc:
+            sub_s1 = (
+                f"showing {n_lig1} of {n_nuc} occurrences "
+                f"({n_form_show} of {n_form_tot} forms, "
+                f"{n_doc_show} of {n_doc_tot} documents); "
+                f"link cap = {cap_s1}"
+            )
+            avisos.append(f"_g_sankey_forma_obra.html: {sub_s1}")
+        tplot.sankey_html(p1, g_sankey1, titulo=tit_s1, subtitulo=sub_s1)
+
+        nuc_graf = nuc
+        for col, rotulo, _fam in CAMPOS_LEXICO_OPCIONAIS:
+            nuc_graf = _preencher_lexico_vazio(nuc_graf, col, rotulo)
+        cap_s2 = None
+        p2 = tplot.pares_termo_rel_pol(nuc_graf, max_pares=cap_s2)
+        n_lig2_a = int(sum(
+            w for a, b, w in p2
+            if a in set(nuc_graf["canonical_term"].astype(str))
+        )) if p2 else 0
+        tit_s2 = f"termo → relação → polaridade  ({nota_n})"
+        sub_s2 = ""
+        if cap_s2 is not None:
+            n_pares2 = len(p2)
+            sub_s2 = f"showing {n_pares2} links; link cap = {cap_s2}"
+            avisos.append(f"_g_sankey_termo_rel.html: {sub_s2}")
+        tplot.sankey_html(p2, g_sankey2, titulo=tit_s2, subtitulo=sub_s2)
         g_msgs.append("OK sankey HTML")
     except Exception as exc:
         g_msgs.append(f"FALHA sankey: {exc}")
 
     # --- Resumo ----------------------------------------------------------
+    hits_por_doc = (
+        nuc[col_doc].astype(str).value_counts()
+        if len(nuc) and col_doc in nuc.columns else pd.Series(dtype=int)
+    )
+    n_pol_adj = int(_serie_nao_vazia(nuc["polaridade"]).sum()) if (
+        len(nuc) and "polaridade" in nuc.columns) else 0
+    n_pol_sem = n_nuc - n_pol_adj
+    n_eixo_adj = int(_serie_nao_vazia(nuc["eixo"]).sum()) if (
+        len(nuc) and "eixo" in nuc.columns) else 0
+    n_eixo_sem = n_nuc - n_eixo_adj
+    mediana_hpd = (
+        float(hits_por_doc.median()) if len(hits_por_doc) else float("nan"))
+    n_doc_1 = int((hits_por_doc == 1).sum()) if len(hits_por_doc) else 0
+    gini_hpd = gini_index(hits_por_doc.values) if len(hits_por_doc) else float("nan")
+
     resumo = pd.DataFrame({
         "indicador": [
             "Fase", "Data fase 2", "Comando fase 1 (meta)",
@@ -879,6 +1246,13 @@ def analisar(xlsx: Path, saida: Path | None = None,
             "Revisao: linhas marcadas", "Revisao: taxa marcacao",
             "Avisos", "Nulo polaridade", "Unidade co-ocorrencia",
             "Modo desduplicacao", "Analise sem revisao humana",
+            "n_hits_com_polaridade_adjudicada",
+            "n_hits_sem_polaridade_adjudicada",
+            "n_hits_com_eixo_adjudicado",
+            "n_hits_sem_eixo_adjudicado",
+            "mediana_hits_por_documento",
+            "n_documentos_com_1_hit",
+            "gini_hits_por_documento",
         ],
         "valor": [
             "2 - analise",
@@ -895,22 +1269,30 @@ def analisar(xlsx: Path, saida: Path | None = None,
             " | ".join(avisos) if avisos else "—",
             nulo_polaridade, cooc_unidade, modo_dedupe,
             meta.get("sem_revisao", "nao"),
+            n_pol_adj, n_pol_sem, n_eixo_adj, n_eixo_sem,
+            mediana_hpd if mediana_hpd == mediana_hpd else "—",
+            n_doc_1,
+            round(gini_hpd, 4) if gini_hpd == gini_hpd else "—",
         ],
     })
 
     # --- Export ----------------------------------------------------------
     print(f"A escrever {saida.name} ...", flush=True)
-    with pd.ExcelWriter(saida, engine="openpyxl") as xw:
-        # preservar 0_Instrucoes e concordancia
-        try:
-            pd.read_excel(xlsx, sheet_name="0_Instrucoes").to_excel(
-                xw, sheet_name="0_Instrucoes", index=False)
-        except Exception:
-            pass
+    saida = Path(saida)
+    xlsx = Path(xlsx)
+    if saida.resolve() != xlsx.resolve():
+        saida.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(xlsx, saida)
+    folhas_escritas: set[str] = set()
+    with pd.ExcelWriter(
+        saida, engine="openpyxl", mode="a", if_sheet_exists="replace",
+    ) as xw:
         resumo.to_excel(xw, sheet_name="1_Resumo", index=False)
+        folhas_escritas.add("1_Resumo")
         _escrever_folha(xw, "2_Frequencias", freq_tok,
                         "linhas nucleares (ocorrencias_token) / doc_id",
                         n_nuc)
+        folhas_escritas.add("2_Frequencias")
         if len(tst_df):
             out_t = tst_df.copy()
             for c in ("p", "p_ajustado_BH"):
@@ -920,52 +1302,28 @@ def analisar(xlsx: Path, saida: Path | None = None,
             _escrever_folha(xw, "3_Testes", out_t,
                             f"nucleares apos desduplicacao ({modo_dedupe})",
                             n_dedup)
+            folhas_escritas.add("3_Testes")
         if len(sintaxe):
             _escrever_folha(xw, "4_Sintaxe", sintaxe.reset_index(),
                             f"nucleares apos desduplicacao ({modo_dedupe})",
                             n_dedup)
+            folhas_escritas.add("4_Sintaxe")
         if len(cooc):
             _escrever_folha(xw, "5_Coocorrencia", cooc.reset_index(),
                             f"obras (co-presenca; unidade={cooc_unidade})",
                             int(nuc[col_doc].nunique()))
+            folhas_escritas.add("5_Coocorrencia")
         # Concordância sem banner meta — reutilizável / legível por pandas
         _escrever_folha(
             xw, "8_Concordancia", brutas,
             "todas as linhas (brutas=hits)", n_bruto, com_meta=False,
         )
-        # Preservar / regenerar folhas de identidade (schema ≥ 2)
-        try:
-            hits_alias = brutas
-            _escrever_folha(
-                xw, "8_Concordancia_Hits", hits_alias,
-                "hits NEAR (= 8_Concordancia)", n_bruto, com_meta=False,
-            )
-        except Exception:
-            pass
-        try:
-            if "8_Concordancia_Ocorrencias" in info["sheets"]:
-                pd.read_excel(
-                    xlsx, sheet_name="8_Concordancia_Ocorrencias"
-                ).to_excel(
-                    xw, sheet_name="8_Concordancia_Ocorrencias", index=False)
-            elif "texture_occurrence_id" in brutas.columns:
-                tn.agregar_ocorrencias(brutas).to_excel(
-                    xw, sheet_name="8_Concordancia_Ocorrencias", index=False)
-        except Exception:
-            pass
-        for folha_extra in ("Config_lexico", "Manifesto_corpus", "Duplicados",
-                            "9_Excluidas"):
-            if folha_extra in info["sheets"]:
-                try:
-                    if folha_extra == "9_Excluidas":
-                        excl = ler_folha_concordancia(xlsx, "9_Excluidas")
-                        excl.to_excel(
-                            xw, sheet_name="9_Excluidas", index=False)
-                    else:
-                        pd.read_excel(xlsx, sheet_name=folha_extra).to_excel(
-                            xw, sheet_name=folha_extra, index=False)
-                except Exception:
-                    pass
+        folhas_escritas.add("8_Concordancia")
+        _escrever_folha(
+            xw, "8_Concordancia_Hits", brutas,
+            "hits NEAR (= 8_Concordancia)", n_bruto, com_meta=False,
+        )
+        folhas_escritas.add("8_Concordancia_Hits")
         if len(assoc):
             cols_a = [c for c in (
                 "canonical_term", "O11_janela", "O12_banda_ref", "obras",
@@ -978,37 +1336,50 @@ def analisar(xlsx: Path, saida: Path | None = None,
             _escrever_folha(xw, "9_Associacao", assoc[cols_a],
                             "linhas nucleares (O11); logDice usa janelas do no",
                             n_nuc)
+            folhas_escritas.add("9_Associacao")
         _escrever_folha(xw, "12_Formas", formas,
                         "linhas nucleares; inventario fechado pela consulta",
                         n_nuc)
+        folhas_escritas.add("12_Formas")
         if len(reg_tab):
             _escrever_folha(xw, "13_Regressao", reg_tab,
                             "linhas brutas; DV=nuclear vs incidental",
                             n_bruto)
+            folhas_escritas.add("13_Regressao")
             if reg_aj:
                 pd.DataFrame({"indicador": list(reg_aj),
                               "valor": list(reg_aj.values())}).to_excel(
                     xw, sheet_name="13_Ajuste_modelo", index=False)
+                folhas_escritas.add("13_Ajuste_modelo")
         if len(perfil):
             _escrever_folha(xw, "15_Perfis", perfil,
                             f"nucleares apos desduplicacao ({modo_dedupe})",
                             n_dedup)
+            folhas_escritas.add("15_Perfis")
         pd.DataFrame({"aviso": avisos or ["—"]}).to_excel(
             xw, sheet_name="0_Avisos", index=False)
-        # Dominios se existir
-        if "Dominios_por_rever" in info["sheets"]:
-            pd.read_excel(xlsx, sheet_name="Dominios_por_rever").to_excel(
-                xw, sheet_name="Dominios_por_rever", index=False)
+        folhas_escritas.add("0_Avisos")
+        tab_nuvem.to_excel(xw, sheet_name="6_Graficos_nuvem", index=False)
+        folhas_escritas.add("6_Graficos_nuvem")
+        tab_barras.to_excel(xw, sheet_name="6_Graficos_barras", index=False)
+        folhas_escritas.add("6_Graficos_barras")
 
-    # embutir graficos
+    # embutir graficos; preservar folhas do investigador
     wb = load_workbook(saida)
+    for nome in list(wb.sheetnames):
+        if nome in FOLHAS_GERADAS_FASE2 and nome not in folhas_escritas | {"6_Graficos"}:
+            del wb[nome]
     if "6_Graficos" in wb.sheetnames:
         del wb["6_Graficos"]
     ws = wb.create_sheet("6_Graficos")
     ws["A1"] = f"Graficos | N_nuclear={n_nuc} | {datetime.now().date()}"
     ws["A2"] = " | ".join(g_msgs)
     row = 4
-    for p, label in ((g1, "Frequencia token"), (g_nuvem, "Nuvem")):
+    for p, label in (
+        (g1, "Frequencia token"),
+        (g_nuvem_hits, "Nuvem (N_hits)"),
+        (g_nuvem_docs, "Nuvem (n_documentos)"),
+    ):
         ws.cell(row=row, column=1, value=label)
         if p.exists():
             try:
@@ -1020,13 +1391,17 @@ def analisar(xlsx: Path, saida: Path | None = None,
         row += 35
     ws.cell(row=row, column=1,
             value=f"Sankey HTML: {g_sankey1.name} ; {g_sankey2.name}")
+    _anotar_instrucoes_adjudicacao(wb)
     for nome in wb.sheetnames:
+        if nome not in FOLHAS_GERADAS_FASE2:
+            continue
         s = wb[nome]
         for c in s[1]:
             if c.value is not None:
                 c.font = Font(name="Arial", bold=True)
         s.freeze_panes = "A2"
     wb.save(saida)
+    wb.close()
 
     print(resumo.to_string(index=False))
     print()

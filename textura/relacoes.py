@@ -12,6 +12,9 @@ import pandas as pd
 
 from textura.config import MODALIDADE, RELACOES_NUCLEARES
 from textura.revisao import etiqueta_exacta, etiqueta_prefixada, juntar_etiquetas
+
+_POS_FUNCIONAL = frozenset({"ADP", "AUX", "DET", "PRON", "SCONJ", "CCONJ", "PART"})
+_POS_LEXICAL = frozenset({"NOUN", "PROPN", "VERB", "ADJ"})
 from textura.tokenizacao import anota_sintaxe, tokeniza
 
 
@@ -140,6 +143,73 @@ def _e_token_textural(tok) -> bool:
     return bool(_RX_TEXTURAL.match(tok.text))
 
 
+def _percurso_cadeia(tok_ini, tok_fim, max_arcs: int = 8) -> str:
+    """``stability/pobj->with/prep->texture`` (sem repetir o nó intermédio)."""
+    segs = [f"{tok_ini.text}/{tok_ini.dep_}->{tok_ini.head.text}"]
+    cur = tok_ini.head
+    n = 0
+    while cur is not None and not _mesmo_token(cur, tok_fim) and n < max_arcs:
+        nxt = cur.head
+        if nxt is None or nxt.i == cur.i:
+            break
+        segs.append(f"{cur.dep_}->{nxt.text}")
+        cur = nxt
+        n += 1
+    return "/".join(segs)
+
+
+def _resolver_nucleo_funcional(doc, off_termo: int, res: dict,
+                               max_arcs: int = 3) -> dict:
+    """Se o núcleo for palavra funcional, sobe até NOUN/PROPN/VERB/ADJ."""
+    t_te = _token_em(doc, off_termo)
+    if t_te is None:
+        return res
+    alvo = str(res.get("nucleo_da_propriedade") or res.get("governante")
+               or "").strip().lower()
+    if not alvo:
+        return res
+    start = None
+    if t_te.head is not None and t_te.head.text.lower() == alvo:
+        start = t_te.head
+    else:
+        for tok in t_te.ancestors:
+            if tok.text.lower() == alvo:
+                start = tok
+                break
+        if start is None:
+            for tok in doc:
+                if tok.text.lower() == alvo:
+                    start = tok
+                    break
+    if start is None or start.pos_ not in _POS_FUNCIONAL:
+        return res
+    cur = start
+    reached = None
+    for _ in range(max_arcs):
+        nxt = cur.head
+        if nxt is None or nxt.i == cur.i:
+            break
+        cur = nxt
+        if cur.pos_ in _POS_LEXICAL:
+            reached = cur
+            break
+    out = dict(res)
+    if reached is None:
+        prev = out.get("revisao_sugerida") or ""
+        out["revisao_sugerida"] = juntar_etiquetas(
+            prev, etiqueta_exacta("nucleo_nao_resolvido"))
+        return out
+    out["nucleo_da_propriedade"] = reached.text
+    out["percurso_dep"] = _percurso_cadeia(t_te, reached, max_arcs=max_arcs + 1)
+    if _e_token_textural(reached):
+        out["relacao_sintactica"] = "obliqua"
+        out["nuclear"] = True
+        out["motivo_exclusao"] = ""
+        out["orientacao"] = "termo_sobre_no"
+        out["governante"] = reached.text
+    return out
+
+
 def _coordenacao_heterogenea(t_no) -> str:
     """Nome não textural coordenado com N ('of texture and dynamics',
     'of colors and textures'). Devolve o texto do conjunto ou ''."""
@@ -194,6 +264,7 @@ def relacao_dependencia(
     """
     res = _relacao_dependencia_base(
         doc, off_no, off_termo, preps_genitivo=preps_genitivo)
+    res = _resolver_nucleo_funcional(doc, off_termo, res)
     if not res.get("nuclear"):
         return res
     t_no, t_te = _token_em(doc, off_no), _token_em(doc, off_termo)

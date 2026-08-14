@@ -16,6 +16,7 @@ REVISAO_EXACTAS: frozenset[str] = frozenset({
     "genitiva_por_complemento",
     "atributiva_via_conj",
     "atributiva_coordenada",
+    "nucleo_nao_resolvido",
 })
 
 # Prefixos (incluem o ':' final). O detalhe é livre mas obrigatório.
