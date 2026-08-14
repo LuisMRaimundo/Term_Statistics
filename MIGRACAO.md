@@ -19,7 +19,7 @@
 | `especificacao_preposicional` | reavaliar com spaCy → tipicamente `nominal_genitiva` ou `incidental` | conforme árvore |
 | `definicao_metalinguistica` | `predicativa_secundaria` ou `indeterminada` | conforme árvore |
 | `indeterminada` | `indeterminada` | não |
-| — | `nominal_composto`, `nominal_genitiva`, `adverbial` | sim |
+| — | `nominal_composto`, `nominal_genitiva`, `adverbial`, `obliqua` | sim |
 | — | `incidental`, `adverbial_verbal`, `adverbial_de_grau`, `coordenada` | não |
 
 **Importante:** o mapa antigo que colapsava especificação preposicional em `atributiva` foi suprimido. As categorias finas são gravadas tal qual.

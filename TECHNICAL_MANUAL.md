@@ -44,7 +44,7 @@ The methodological core is a **three-level ontology**:
 | Avoid treating shifted KWIC windows as new observations | Window fusion (`janela_sobreposta`) + occurrence IDs |
 | Support **human adjudication** (nuclear vs incidental) | Editable Excel sheet `8_Concordancia` |
 | Quantify **attraction** of terms to the node vs a farther band | $2\times2$ association measures (OR, $G^2$, MI, logDice, …) |
-| Test **polarity** and contingency structure | Binomial test, $\chi^2$ / Monte Carlo, Cramér’s $V$, BH |
+| Test **polarity** and contingency structure | $\chi^2$ / Monte Carlo, Cramér’s $V$, BH; binomial/BF only if polarity is not a lexicon function |
 | Produce a **readable concordance** with page cues | `textura_apendice.py` → DOCX (+ optional PDF page lookup) |
 
 **Non-goals:** the suite does not re-OCR the corpus; it trusts the KWIC matrix. Absolute character offsets in the original PDF are not available—only positions inside the matrix context fragment.
@@ -137,11 +137,27 @@ Reads the matrix + terms file; emits schema-2 concordance:
 ### Phase 2a — Human review
 
 Edit yellow cells only: `relacao_sintactica`, `nuclear`, `polaridade`, `eixo`, `dominio`, `motivo_exclusao`, notes.  
-Analysis keeps **`nuclear = TRUE`** only.
+`nuclear` is the **automatic** verdict. `revisto_por_humano`, when `TRUE` or `FALSE`, **overrides** `nuclear` in Phase 2; empty means “use `nuclear`”. Each applied override is logged in `0_Avisos` (`hit_key`, computed value, human value). Initials such as `LR` are **not** an override.
 
 ### Phase 2b — Analysis (`textura_analise.py`)
 
-Frequencies, association table, contingency tests, optional regression/profiles, graphs.
+Frequencies (with document dispersion), association table, contingency tests (circular polarity/axis tests omitted), optional regression/profiles, graphs.
+
+**Sheets written by Phase 2:** `1_Resumo`, `2_Frequencias`, `3_Testes`, `4_Sintaxe`, `5_Coocorrencia`, `8_Concordancia` / `_Hits` (effective nuclear), `9_Associacao`, `12_Formas`, `13_Regressao`, `15_Perfis`, `0_Avisos`, `6_Graficos`, `6_Graficos_nuvem`, `6_Graficos_barras`.
+
+**Sheets copied through unchanged:** any input sheet not in that list (`0_Instrucoes`, `Config_lexico`, `Resumo_ligacao`, notes, legends, …). Researcher sheets are no longer dropped.
+
+**Graphs (nuclear set after override; no context de-duplication):**
+
+| File | Weight / content |
+|---|---|
+| `_g_nuvem_hits.png` | `matched_form` weighted by `12_Formas.n` |
+| `_g_nuvem_docs.png` | `matched_form` weighted by `12_Formas.n_documentos` |
+| `_g_freq_token.png` | `canonical_term`: $N_{\mathrm{hits}}$ and $n_{\mathrm{documentos}}$ side by side |
+| `_g_sankey_forma_obra.html` | form → document; link sum $= N_{\mathrm{hits}}$ unless a cap is set (then the subtitle declares it) |
+| `_g_sankey_termo_rel.html` | term → relation → polarity; blank polarity/axis rendered as *não adjudicada* |
+
+Colour in clouds and bars is hashed from `canonical_term` (morphological family). Layout seed is fixed (`random_state=20260725`). Audit pairs live in `6_Graficos_nuvem` (`ponderacao` = `hits` / `docs`) and `6_Graficos_barras`.
 
 ### Phase 3 — Appendix (`textura_apendice.py`)
 
@@ -231,11 +247,13 @@ $$
 
 Default: **spaCy** dependency parse (`relacao_dependencia`).
 
-**Nuclear** (enter analysis if `nuclear=TRUE`):  
-`atributiva`, `predicativa`, `predicativa_secundaria`, `nominal_composto`, `nominal_genitiva`, `adverbial`
+**Nuclear** (enter analysis if effective `nuclear=TRUE`):  
+`atributiva`, `predicativa`, `predicativa_secundaria`, `nominal_composto`, `nominal_genitiva`, `adverbial`, `obliqua`
 
 **Non-nuclear:**  
 `incidental`, `adverbial_verbal`, `adverbial_de_grau`, `coordenada`, `indeterminada`
+
+If `nucleo_da_propriedade` is a function word (`ADP`, `AUX`, `DET`, `PRON`, `SCONJ`, `CCONJ`, `PART`), the walker climbs up to 3 arcs to the first `NOUN`/`PROPN`/`VERB`/`ADJ` and records the full path in `percurso_dep` (e.g. `stability/pobj->with/prep->texture`). Reaching a `textur*` node sets `relacao_sintactica = obliqua` and `nuclear = TRUE`. If no lexical head is found, the previous values stay and `revisao_sugerida` gains `nucleo_nao_resolvido`. Existing `nuclear = TRUE` is never downgraded.
 
 Polarity poles and semantic axes come from the adjudicated lexicon (`textura_lexico.py`):
 
@@ -252,6 +270,7 @@ prefixed patterns). Current inventory:
 | `genitiva_por_complemento` | Genitive recovered via complement path |
 | `atributiva_via_conj` | Attributive after conjunction normalisation |
 | `atributiva_coordenada` | Shared adjectival modification / coordination |
+| `nucleo_nao_resolvido` | Function-word head; no lexical ancestor within 3 arcs |
 | `coordenacao_heterogenea:*` | Texture coordinated with a non-textural noun |
 | `associativa_com_nao_textural:*` | Associative *with/com/…* to a non-textural noun |
 | `dominio_janela:*` | Extra-musical domain cue in the window |
@@ -469,9 +488,11 @@ $$
 
 *Implementation:* `shannon`, `pielou`, `simpson_inverso`.
 
+`2_Frequencias` and `12_Formas` also report, per term / form: `n_documentos`, `hits_por_documento`, `share_doc_maximo`, `doc_dominante`. `1_Resumo` adds `mediana_hits_por_documento`, `n_documentos_com_1_hit`, and the Gini index of the hits-per-document distribution. There is **no** per-document cap — the indicators make the skew visible.
+
 ---
 
-### 7.13 Polarity binomial test
+### 7.13 Polarity binomial test (omitted when deterministic)
 
 Let $k$ = nuclear rows with `polaridade = estabilidade`, $n$ = nuclear rows with polarity filled, $p_0$ = null proportion (from reference band or lexicon):
 
@@ -481,6 +502,10 @@ H_0:\; p=p_0,\qquad
 $$
 
 Bootstrap percentile CI for $\hat p=k/n$ (`bootstrap_proporcao`).
+
+**Guard.** Before any test whose dependent variable is a function of `canonical_term` (currently `polaridade` and `eixo`), Phase 2 computes Cramér’s $V$ on nuclear rows. If $V=1$ or only one value is observed, the binomial test and the Bayes factor are **not** written. `3_Testes` gets a single omission row (`omitted: polarity is a deterministic function of canonical_term (Cramér's V = 1)`), and `0_Avisos` records the same reason used for a degenerate $\chi^2$. Relation $\times$ polarity is still produced when the table is not degenerate.
+
+Blank lexicon fields are **not** dropped from graphs: they appear as `não adjudicada` / `não adjudicado`. `1_Resumo` reports `n_hits_com_polaridade_adjudicada` and `n_hits_sem_polaridade_adjudicada` (and the axis analogues). `0_Avisos` lists the affected terms and hit counts.
 
 ---
 
@@ -500,7 +525,7 @@ $$
 V=\sqrt{\frac{\chi^{2}}{n\cdot\min(r-1,c-1)}}
 $$
 
-Deterministic collinearity: if $V\approx 1$ (or each row has a single non-zero cell), crossed tests are **blocked** (axis/polarity often functions of the lexicon).
+Deterministic collinearity: if $V\approx 1$ (or each row has a single non-zero cell), tests whose DV is that column are **omitted** (axis/polarity are typically functions of the lexicon). The generic guard is `dv_deterministica_de_canonical`.
 
 ---
 
@@ -614,7 +639,7 @@ Check `0_Instrucoes`: `schema_near = 2`, `n_hits`, `n_ocorrencias`.
 2. Kill false friends (`even*` → *event*, verbal *continues*, …)  
 3. Trust `janela_sobreposta` exclusions; do not delete survivors with `n_janelas_fundidas > 1`  
 4. Fill `polaridade` / `eixo` / `dominio` as needed  
-5. Set `revisto_por_humano`
+5. Leave `revisto_por_humano` empty to keep the automatic `nuclear`, or set `TRUE`/`FALSE` to override it (do not put initials there)
 
 **Step E — Analyse**
 
@@ -654,6 +679,8 @@ A high raw frequency with OR $<1$ means: the thesaurus neighbour is productive i
 3. Mixing EN/PT patterns in one English-filtered run  
 4. Citing `(PDF p. N)` as if it were the book page  
 5. Ignoring collinearity warnings when polarity/axis are lexicon-determined  
+6. Reading a word cloud as if it were document-weighted when it is hit-weighted (or the reverse) — use `_g_nuvem_hits.png` and `_g_nuvem_docs.png` together  
+7. Putting initials in `revisto_por_humano` and expecting Phase 2 to treat the row as reviewed — only `TRUE`/`FALSE` override `nuclear`
 
 ### Lesson 6 — Minimal mental model of logDice
 
