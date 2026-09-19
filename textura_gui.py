@@ -58,6 +58,13 @@ except Exception:  # noqa: BLE001
                  "xlabel": "Ocorrências"},
         "formas": {"titulo": "Termos associados", "subtitulo": "",
                    "xlabel": "Ocorrências"},
+        "formas_eixos": {
+            "titulo": "Frequência por eixo semântico", "subtitulo": "",
+            "xlabel": "Frequência (ocorrências; documentos)",
+            "serie_a": "Ocorrências", "serie_b": "Documentos",
+            "decisao_retido": "Retido", "decisao_relacionado": "Relacionado",
+            "decisao_excluido": "Excluído",
+        },
         "near": {"titulo": "Distâncias NEAR", "subtitulo": "",
                  "xlabel": "Distância (tokens)", "ylabel": "Nº de pares",
                  "mediana": "Mediana", "media": "Média"},
@@ -124,7 +131,7 @@ class App(tk.Tk):
             value=str(leg0.get("rodape") or LEG_PADRAO["rodape"])
         )
         self.v_leg = {}
-        for chave in ("sankey", "nuvem", "docs", "formas", "near"):
+        for chave in ("sankey", "nuvem", "docs", "formas", "formas_eixos", "near"):
             base = dict(LEG_PADRAO.get(chave) or {})
             base.update(leg0.get(chave) or {})
             self.v_leg[chave] = {
@@ -315,6 +322,7 @@ class App(tk.Tk):
         for chave, campo, defeito in (
             ("docs", "xlabel", "Ocorrências"),
             ("formas", "xlabel", "Ocorrências"),
+            ("formas_eixos", "xlabel", "Frequência (ocorrências; documentos)"),
             ("near", "xlabel", "Distância (tokens)"),
             ("near", "ylabel", "Nº de pares"),
             ("near", "mediana", "Mediana"),
@@ -336,6 +344,9 @@ class App(tk.Tk):
             ("Formas · título", self.v_leg["formas"]["titulo"]),
             ("Formas · subtítulo", self.v_leg["formas"]["subtitulo"]),
             ("Formas · eixo X", self.v_leg["formas"]["xlabel"]),
+            ("Eixos · título", self.v_leg["formas_eixos"]["titulo"]),
+            ("Eixos · subtítulo", self.v_leg["formas_eixos"]["subtitulo"]),
+            ("Eixos · eixo X", self.v_leg["formas_eixos"]["xlabel"]),
             ("NEAR · título", self.v_leg["near"]["titulo"]),
             ("NEAR · subtítulo", self.v_leg["near"]["subtitulo"]),
             ("NEAR · eixo X", self.v_leg["near"]["xlabel"]),
@@ -704,13 +715,19 @@ class App(tk.Tk):
                 op, text=txt, variable=var, command=_toggle_subset,
             ).pack(side="left", padx=(0, 8))
 
+        v_tese = tk.BooleanVar(value=False)
+        ttk.Checkbutton(
+            frm,
+            text="Gráfico de eixos em modo tese (sem título na imagem; PNG+SVG)",
+            variable=v_tese,
+        ).grid(row=8, column=0, columnspan=3, sticky="w", pady=(10, 0))
         ttk.Label(
             frm, style="Hint.TLabel", wraplength=580,
             text="Por omissão: nucleares + desduplicação «candidatos» "
                  "(só snippets de contexto exactamente iguais). "
                  "«obra_termo» é só sensibilidade — não use para limpar "
                  "falsos duplicados de títulos."
-        ).grid(row=8, column=0, columnspan=3, sticky="w", pady=(12, 0))
+        ).grid(row=9, column=0, columnspan=3, sticky="w", pady=(12, 0))
 
         def ok():
             xin = v_in.get().strip()
@@ -787,6 +804,8 @@ class App(tk.Tk):
                 cmd += ["--plano-a-priori", v_plano.get().strip()]
             if v_kappa.get().strip():
                 cmd += ["--kappa-cego", v_kappa.get().strip()]
+            if v_tese.get():
+                cmd += ["--modo-tese"]
             self.v_saida.set(xout)
             dlg.destroy()
             self._log("\n" + "-" * 60)
@@ -794,7 +813,7 @@ class App(tk.Tk):
             self._arranca_cmd(cmd, "A analisar…")
 
         btns = ttk.Frame(frm)
-        btns.grid(row=9, column=0, columnspan=3, sticky="e", pady=(16, 0))
+        btns.grid(row=10, column=0, columnspan=3, sticky="e", pady=(16, 0))
         ttk.Button(btns, text="Cancelar", command=dlg.destroy).pack(side="right")
         ttk.Button(btns, text="Analisar", command=ok).pack(side="right",
                                                            padx=(0, 8))

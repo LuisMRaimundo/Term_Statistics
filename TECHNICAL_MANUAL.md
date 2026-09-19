@@ -145,6 +145,20 @@ Analysis keeps **`nuclear = TRUE`** only.
 
 Frequencies, association table, contingency tests, optional regression/profiles, graphs.
 
+The legacy frequency chart (`_g_freq_token.png`, one colour per term via `cor_canonical`) is unchanged. A second chart groups **all realised lexical families** by the author’s curation axis.
+
+#### Curation-axis frequency chart
+
+| Piece | Role |
+|---|---|
+| `dados/lexicos/eixos_curadoria.tsv` | Author table: `canonical_term`, `eixo`, `decisao` (`retido` / `excluido` / `relacionado`), `motivo`. A realised term missing from the TSV is labelled `por_classificar` and listed in one warning — the run does not abort. |
+| `textura.lexico.carregar_eixos_curadoria` | TSV loader (same family as the other `dados/lexicos` loaders). |
+| `textura_plots.barras_agrupadas_por_eixo` | Horizontal paired bars (occurrences + documents) grouped by `eixo`. Two colours only (`ACCENT` / lightened `ACCENT`). `decisao` is encoded without colour: solid = retained, reduced-alpha + edge = related, hatched white = excluded. Terms with \(N\le 2\) inside a group collapse to `outros (k)`. |
+| `--modo-tese` | Off by default. When set, the PNG has no in-image title / subtitle / footer (caption lives in Word), white background, x label *Frequência (ocorrências; documentos)*, 300 dpi, plus a sibling `.svg`. |
+| Outputs | `_g_freq_eixos.png`, `_g_freq_eixos.svg`, `_g_freq_eixos_legenda.txt`, sheet + TSV `curadoria_fluxo` (`coocorrencias_brutas` from the pre-adjudication frame; left empty with a log line if that count is unavailable). |
+
+Legend strings for this chart live in `textura_legendas.PADRAO["formas_eixos"]` (the existing `"formas"` block is untouched).
+
 ### Phase 3 — Appendix (`textura_apendice.py`)
 
 Nuclear rows → DOCX tables (excerpt | source). Optional parallel PDF page lookup:
@@ -708,6 +722,7 @@ logDice rescales to a familiar collocational range (Rychlý). Compare terms **wi
 | `--plano-a-priori` | JSON/YAML locks `desduplicacao` / polarity null / relations (plan wins) |
 | `--kappa-cego` | Second-reviewer Excel/JSON; Cohen's κ on `hit_key` → sheet `16_Kappa` |
 | `--lexico` | Adjudicated terms (`etiqueta / familia = patterns`) |
+| `--modo-tese` | Thesis-ready `_g_freq_eixos` (no in-image caption; PNG + SVG). Default off. |
 
 ### `textura_freq.py`
 
@@ -887,7 +902,7 @@ Conflicting root vs canonical files raise rather than choosing silently.
 | `textura_doctor.py` | Pre-analysis checklist CLI |
 | `textura_concordancia_qa.py` | Duplicates / relation second opinion / extra-musical domain QA |
 | `textura_apa7.py` | APA 7 catalogue for `--refs` |
-| `textura_plots.py` | Visualisations |
+| `textura_plots.py` | Visualisations (incl. `barras_agrupadas_por_eixo`) |
 | `textura_gui.py` | UI shell (+ Doctor / QA / APA7 utilities) |
 | `tests/` | Tokenisation, syntax, IDs, excerpt formatting, triage R95, QA |
 

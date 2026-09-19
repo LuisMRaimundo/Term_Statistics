@@ -63,7 +63,7 @@ FOLHAS_GERADAS_FASE2 = frozenset({
     "9_Associacao", "12_Formas", "13_Regressao", "13_Ajuste_modelo",
     "15_Perfis", "0_Avisos", "6_Graficos",
     "6_Graficos_nuvem", "6_Graficos_barras", "6_Graficos_familias",
-    "16_Kappa",
+    "16_Kappa", "curadoria_fluxo",
 })
 NUVEM_RANDOM_STATE = 20260725
 ROTULO_NAO_ADJUDICADA = "não adjudicada"
@@ -74,6 +74,85 @@ CAMPOS_LEXICO_OPCIONAIS = (
 )
 _TRUE = {"true", "1", "sim", "yes"}
 _FALSE = {"false", "0", "nao", "não", "no"}
+FRASE_LEGENDA_EIXOS = (
+    "A frequência não equivale à força de associação ao núcleo; as medidas de "
+    "associação constam do Apêndice."
+)
+
+
+def escrever_legenda_eixos(
+        destino: Path, *, n: int, cauda: dict, conjunto: str) -> None:
+    """Legenda pronta para o Word (UTF-8, português)."""
+    linhas = [
+        "Frequência das famílias lexicais realizadas junto de textur*, "
+        "agrupadas por eixo semântico de curadoria.",
+        "",
+        "Unidade de contagem: ocorrência nuclear (atribuição genuína) e "
+        "documento distinto (n_documentos).",
+        f"Conjunto: atribuições nucleares. {conjunto} N={n}.",
+        "",
+        "Termos colapsados em «outros» por eixo:",
+    ]
+    if cauda:
+        for eixo, termos in cauda.items():
+            linhas.append(f"  {eixo}: {', '.join(termos)}")
+    else:
+        linhas.append("  (nenhum)")
+    linhas.extend(["", FRASE_LEGENDA_EIXOS, ""])
+    Path(destino).write_text("\n".join(linhas), encoding="utf-8")
+
+
+def tabela_curadoria_fluxo(brutas, nuc, col_doc, cura_map) -> tuple[pd.DataFrame, str]:
+    """Fluxo bruto → genuínas para o apêndice. Não adivinha contagens."""
+    cols = (
+        "canonical_term", "eixo", "coocorrencias_brutas",
+        "atribuicoes_genuinas", "n_documentos", "decisao", "motivo",
+    )
+    aviso = ""
+    termos = (
+        sorted(nuc["canonical_term"].astype(str).unique())
+        if len(nuc) and "canonical_term" in nuc.columns else []
+    )
+    brutas_n: dict | None
+    if brutas is None or "canonical_term" not in getattr(brutas, "columns", []):
+        aviso = (
+            "coocorrencias_brutas: frame pré-adjudicação sem coluna "
+            "canonical_term; coluna deixada vazia."
+        )
+        brutas_n = None
+    else:
+        brutas_n = (
+            brutas.groupby(brutas["canonical_term"].astype(str))
+            .size()
+            .to_dict()
+        )
+    genu = (
+        nuc.groupby(nuc["canonical_term"].astype(str)).size().to_dict()
+        if len(nuc) and "canonical_term" in nuc.columns else {}
+    )
+    docs = (
+        nuc.groupby(nuc["canonical_term"].astype(str))[col_doc].nunique().to_dict()
+        if len(nuc) and col_doc in getattr(nuc, "columns", []) else {}
+    )
+    rows = []
+    for t in termos:
+        info = cura_map.get(t) or {
+            "eixo": "por_classificar",
+            "decisao": "por_classificar",
+            "motivo": "",
+        }
+        rows.append({
+            "canonical_term": t,
+            "eixo": info.get("eixo", "por_classificar"),
+            "coocorrencias_brutas": (
+                "" if brutas_n is None else int(brutas_n.get(t, 0))
+            ),
+            "atribuicoes_genuinas": int(genu.get(t, 0)),
+            "n_documentos": int(docs.get(t, 0)),
+            "decisao": info.get("decisao", "por_classificar"),
+            "motivo": info.get("motivo", ""),
+        })
+    return pd.DataFrame(rows, columns=list(cols)), aviso
 
 
 def _cfg_consola():
@@ -910,7 +989,8 @@ def analisar(xlsx: Path, saida: Path | None = None,
              estrito: bool = False,
              plano_a_priori: Path | None = None,
              kappa_cego: Path | None = None,
-             lexico: Path | None = None) -> int:
+             lexico: Path | None = None,
+             modo_tese: bool = False) -> int:
     _cfg_consola()
     logs_plano = []
     if plano_a_priori:
@@ -1342,6 +1422,65 @@ def analisar(xlsx: Path, saida: Path | None = None,
             ["N_hits", "canonical_term"], ascending=[False, True]
         ).reset_index(drop=True)
 
+    g_eixos = base / "_g_freq_eixos.png"
+    g_eixos_leg = base / "_g_freq_eixos_legenda.txt"
+    g_fluxo = base / "curadoria_fluxo.tsv"
+    tab_fluxo = pd.DataFrame()
+    try:
+        from textura.lexico import carregar_eixos_curadoria
+        cura_map = carregar_eixos_curadoria()
+        df_eixos = tab_barras.copy()
+        if len(df_eixos):
+            aplicada, _em_falta = tlex.aplicar_curadoria(
+                list(df_eixos["canonical_term"]), cura_map)
+            df_eixos["eixo"] = [
+                aplicada[str(t)]["eixo"] for t in df_eixos["canonical_term"]]
+            df_eixos["decisao"] = [
+                aplicada[str(t)]["decisao"] for t in df_eixos["canonical_term"]]
+            df_eixos["motivo"] = [
+                aplicada[str(t)]["motivo"] for t in df_eixos["canonical_term"]]
+        else:
+            for _c in ("eixo", "decisao", "motivo"):
+                df_eixos[_c] = pd.Series(dtype=str)
+        campo_rot = None
+        if lexico:
+            try:
+                campo_rot = tlex.carregar_campo_termos(Path(lexico))
+            except Exception:
+                campo_rot = None
+        rotulos_eixos = tlex.rotulos_exibicao_lexico(
+            list(df_eixos["canonical_term"]) if len(df_eixos) else [],
+            campo=campo_rot,
+        )
+        leg_eixos = leg.get("formas_eixos") or {}
+        cauda_eixos, _fig_eixos = tplot.barras_agrupadas_por_eixo(
+            df_eixos, g_eixos,
+            modo_tese=modo_tese,
+            legendas=leg_eixos,
+            rotulos_exibicao=rotulos_eixos,
+            rodape=rodape,
+            titulo=str(leg_eixos.get("titulo") or ""),
+            subtitulo=str(leg_eixos.get("subtitulo") or ""),
+        )
+        g_msgs.append(f"OK freq eixos -> {g_eixos.name}")
+        escrever_legenda_eixos(
+            g_eixos_leg, n=n_nuc, cauda=cauda_eixos,
+            conjunto="(após revisto_por_humano) ·",
+        )
+        g_msgs.append(f"OK legenda eixos -> {g_eixos_leg.name}")
+        tab_fluxo, aviso_brutas = tabela_curadoria_fluxo(
+            brutas, nuc, col_doc, cura_map)
+        if aviso_brutas:
+            print(f"  [aviso] {aviso_brutas}", flush=True)
+            g_msgs.append(f"AVISO fluxo: {aviso_brutas}")
+        tab_fluxo.to_csv(
+            g_fluxo, sep="\t", index=False, encoding="utf-8",
+            lineterminator="\n",
+        )
+        g_msgs.append(f"OK curadoria_fluxo -> {g_fluxo.name}")
+    except Exception as exc:
+        g_msgs.append(f"FALHA freq eixos: {exc}")
+
     lex_path = Path(lexico) if lexico else tfreq.lexico_ao_lado(xlsx)
     mapa_fam = tfreq.ler_mapa_familia_lexico(lex_path) if lex_path else {}
     if mapa_fam:
@@ -1614,6 +1753,13 @@ def analisar(xlsx: Path, saida: Path | None = None,
         if len(tab_kappa):
             tab_kappa.to_excel(xw, sheet_name="16_Kappa", index=False)
             folhas_escritas.add("16_Kappa")
+        if len(tab_fluxo):
+            _escrever_folha(
+                xw, "curadoria_fluxo", tab_fluxo,
+                "fluxo de curadoria (brutas vs nucleares)",
+                n_nuc, com_meta=False,
+            )
+            folhas_escritas.add("curadoria_fluxo")
 
     # embutir graficos; preservar folhas do investigador
     wb = load_workbook(saida)
@@ -1654,6 +1800,7 @@ def analisar(xlsx: Path, saida: Path | None = None,
     row = 4
     for p, label in (
         (g1, "Frequencia token"),
+        (g_eixos, "Frequencia por eixo (curadoria)"),
         (g_fam, "Frequencia familia (substantivo)"),
         (g_nuvem_hits, "Nuvem (N_hits)"),
         (g_nuvem_docs, "Nuvem (n_documentos)"),
@@ -1743,6 +1890,11 @@ def main() -> int:
         help="falhar se o checklist de revisao tiver erros "
              "(nuclear != relacao, 0 nucleares, ...)",
     )
+    ap.add_argument(
+        "--modo-tese",
+        action="store_true",
+        help="grafico de eixos sem titulo/rodape na imagem; PNG 300 dpi + SVG",
+    )
     args = ap.parse_args()
     rels = [p.strip() for p in (args.relacao or "").split(",") if p.strip()]
     return analisar(
@@ -1756,6 +1908,7 @@ def main() -> int:
         plano_a_priori=args.plano_a_priori,
         kappa_cego=args.kappa_cego,
         lexico=args.lexico,
+        modo_tese=args.modo_tese,
     )
 
 

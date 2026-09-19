@@ -29,6 +29,16 @@ PADRAO = {
         "subtitulo": "Hits nucleares em 8_Concordancia (sem desduplicar contexto)",
         "xlabel": "Ocorrências (N_hits)",
     },
+    "formas_eixos": {
+        "titulo": "Frequência por eixo semântico",
+        "subtitulo": "Famílias lexicais realizadas, agrupadas por eixo de curadoria",
+        "xlabel": "Frequência (ocorrências; documentos)",
+        "serie_a": "Ocorrências",
+        "serie_b": "Documentos",
+        "decisao_retido": "Retido",
+        "decisao_relacionado": "Relacionado",
+        "decisao_excluido": "Excluído",
+    },
     "near": {
         "titulo": "Distribuição das distâncias NEAR",
         "subtitulo": "Distância em tokens entre termos com relação sintáctica",
@@ -52,7 +62,7 @@ def guardar_defeito_utilizador(legendas: dict) -> Path:
     """Grava as legendas actuais como defeito da próxima sessão."""
     # Não persistir subtítulos com «Consulta: …» injectada pelo motor
     limpo = json.loads(json.dumps(legendas))
-    for chave in ("sankey", "nuvem", "docs", "formas", "near"):
+    for chave in ("sankey", "nuvem", "docs", "formas", "formas_eixos", "near"):
         bloco = limpo.get(chave)
         if not isinstance(bloco, dict):
             continue
@@ -80,7 +90,7 @@ def carregar(caminho: Path | str | None, consulta: str = "") -> dict:
                 elif v is not None:
                     leg[k] = v
     if consulta:
-        for chave in ("sankey", "nuvem", "docs", "formas", "near"):
+        for chave in ("sankey", "nuvem", "docs", "formas", "formas_eixos", "near"):
             sub = str(leg[chave].get("subtitulo", "") or "")
             if "Consulta:" in sub or "Query:" in sub:
                 continue
@@ -98,7 +108,7 @@ def guardar(caminho: Path | str, legendas: dict) -> None:
 def resumo_titulos(leg: dict) -> str:
     """Uma linha para o registo CLI/GUI."""
     partes = []
-    for k in ("sankey", "nuvem", "docs", "formas", "near"):
+    for k in ("sankey", "nuvem", "docs", "formas", "formas_eixos", "near"):
         t = (leg.get(k) or {}).get("titulo", "")
         if t:
             partes.append(f"{k}={t!r}")
