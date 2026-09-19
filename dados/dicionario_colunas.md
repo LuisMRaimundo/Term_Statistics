@@ -47,7 +47,7 @@ na docstring desse script, não aqui.
 | `url` | URL se presente na matriz |
 | `contexto` | Janela textual exportada (evidência) |
 | `motivo_exclusao` | Motivo de exclusão / não-nuclear |
-| `nuclear` | TRUE = entra na análise pós-revisão |
+| `nuclear` | Veredicto automático (TRUE = nuclear); prevalece só se revisto_por_humano estiver vazio |
 | `fonte_classificacao` | dependencias (spaCy) ou heuristica |
 | `n_janelas_fundidas` | Janelas fundidas por sobreposição |
 | `revisao_sugerida` | Etiquetas de revisão automática (ver vocabulário) |
@@ -57,7 +57,7 @@ na docstring desse script, não aqui.
 | `percurso_dep` | Percurso de dependência spaCy |
 | `dominio` | Domínio documental (triagem path / revisão) |
 | `dominio_janela` | Domínio sugerido por pistas na janela |
-| `revisto_por_humano` | Marca de revisão humana |
+| `revisto_por_humano` | Override humano de nuclear: TRUE / FALSE; vazio = usar nuclear |
 | `nota_revisao` | Nota livre do revisor |
 
 ## Vocabulário `revisao_sugerida`

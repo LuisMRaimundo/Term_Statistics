@@ -66,7 +66,7 @@ Só deve alterar as colunas a amarelo. As restantes são evidência da extracç�
 | `candidato_duplicado` | Já vem preenchido (passagem/janela); pode anotar |
 | `dominio` | Domínio documental (texto livre / adjudicação) |
 | `motivo_exclusao` | Porque excluiu ou duvidou (texto livre) |
-| `revisto_por_humano` | A sua identificação / marca de revisão |
+| `revisto_por_humano` | Override de `nuclear`: `TRUE` ou `FALSE`. Vazio = usar o `nuclear` automático. **Não** ponha iniciais aqui |
 | `nota_revisao` | Comentário livre sobre a linha |
 
 ### Não alterar (evidência)
@@ -83,7 +83,7 @@ Dicionário completo das colunas do pipeline (ordem de exportação + descriçõ
 Etiquetas automáticas do classificador — **não as edite** como taxa oficial;
 use-as para priorizar a revisão humana. Valores canónicos:
 
-- exactas: `genitiva_por_complemento`, `atributiva_via_conj`, `atributiva_coordenada`
+- exactas: `genitiva_por_complemento`, `atributiva_via_conj`, `atributiva_coordenada`, `nucleo_nao_resolvido`
 - prefixadas: `coordenacao_heterogenea:*`, `associativa_com_nao_textural:*`,
   `dominio_janela:*` (ex.: `dominio_janela:geologia`)
 
@@ -132,6 +132,7 @@ Tipos típicos em `Duplicados` / `candidato_duplicado`:
 - `nominal_composto`
 - `nominal_genitiva`
 - `adverbial`
+- `obliqua` (termo ligado ao nó `textur*` por preposição; o classificador sobe a árvore se o núcleo inicial for palavra funcional)
 
 **Valores não nucleares** (em geral `nuclear=FALSE`):
 
@@ -172,12 +173,12 @@ vive em `dados/lexicos/eixos_curadoria.tsv` e só entra no gráfico
 
 ### Passo F — Registo da revisão
 
-Em **cada linha que alterar** (ou, no mínimo, em todas as que decidir manter):
+Duas colunas distintas:
 
-1. `revisto_por_humano` → o seu nome / iniciais / data  
-2. `nota_revisao` → breve justificação quando a decisão não for óbvia  
+1. `nuclear` — veredicto **automático** da fase 1 (pode corrigi-lo à mão se quiser).  
+2. `revisto_por_humano` — override **humano**: `TRUE` ou `FALSE`. Vazio = a fase 2 usa `nuclear`. Cada override é registado em `0_Avisos` (`hit_key`, valor computado, valor humano).
 
-Isto alimenta a taxa de concordância automático vs humano na fase 2.
+A identificação do revisor (iniciais, data) vai para `nota_revisao`, não para `revisto_por_humano`.
 
 ---
 
@@ -201,7 +202,7 @@ Nas colunas com lista, use só os valores da lista (o Excel rejeita outros).
 - [ ] `nuclear` coerente com `relacao_sintactica`  
 - [ ] Polaridade e eixo conferidos nos casos duvidosos  
 - [ ] Domínios em falta tratados (`Dominios_por_rever`)  
-- [ ] `revisto_por_humano` preenchido nas linhas alteradas  
+- [ ] `revisto_por_humano` = `TRUE`/`FALSE` só nas linhas em que o juízo humano diverge do automático; caso contrário, vazio  
 - [ ] Nenhuma alteração a `canonical_term` / `matched_form` / `contexto`  
 - [ ] Ficheiro gravado (mesmo nome ou cópia; a fase 2 aponta para este ficheiro)
 
@@ -221,7 +222,8 @@ A análise:
 
 - exige a folha `0_Instrucoes` (prova de que passou pela fase 1);  
 - valida os valores das colunas editáveis contra a taxonomia;  
-- usa **só** as linhas com `nuclear=TRUE` tal como as deixou.
+- usa as linhas com nuclearidade **efectiva**: `revisto_por_humano` se `TRUE`/`FALSE`, senão `nuclear`;  
+- não apaga folhas que tenha acrescentado (legendas, `Resumo_ligacao`, notas).
 
 ---
 
@@ -233,10 +235,11 @@ A análise:
 | Quer corrigir a forma casada | Excluir a linha; não editar `matched_form` |
 | Duas linhas iguais | Manter uma; `nuclear=FALSE` na outra |
 | Fase 2 recusa o ficheiro | Confirmar que existe `0_Instrucoes` e que gravou o Excel |
-| Esqueceu-se de marcar a revisão | Preencher `revisto_por_humano` antes de analisar |
+| Esqueceu-se do override | `revisto_por_humano` = `TRUE`/`FALSE` só se quiser prevalecer sobre `nuclear` |
+| Pôs iniciais em `revisto_por_humano` | A fase 2 ignora-as; use `nota_revisao` para a identificação |
 
 ---
 
 ## 8. Resumo numa frase
 
-**Amarelo = pode editar; `nuclear=TRUE` = entra na estatística; duplicados e erros resolvem-se na revisão, não na análise.**
+**Amarelo = pode editar; `nuclear` é o juízo automático; `revisto_por_humano` TRUE/FALSE prevalece; duplicados e erros resolvem-se na revisão, não na análise.**
