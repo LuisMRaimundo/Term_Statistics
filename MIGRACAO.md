@@ -31,6 +31,7 @@
 - `Duplicados` — `doc_id` com vários caminhos + grupos `passagem_sobreposta`
 - `8_Concordancia_Hits` — alias explícito do nível hits (= `8_Concordancia`)
 - `8_Concordancia_Ocorrencias` — 1 linha por `texture_occurrence_id` (linha da matriz)
+- `curadoria_fluxo` (fase 2) — brutas vs nucleares + eixo/decisão de `eixos_curadoria.tsv`
 
 ## Schema near ≥ 2 (identidade ocorrência / hit)
 

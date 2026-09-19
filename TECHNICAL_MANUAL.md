@@ -65,14 +65,15 @@ textura_gui.py          ← desktop orchestration (optional)
     └─ textura_apendice.py   Phase 3  — DOCX concordance appendix
 
 Supporting modules
-    textura_lexico.py    lexical field, polarity, axes, doc_id
+    textura_lexico.py    lexical field, polarity, pipeline axes, doc_id
+    textura/lexico.py    TSV lexicons (incl. eixos_curadoria.tsv)
     textura_query.py     boolean query parser
     textura_triagem.py   domain triage / OCR noise / false friends / checklist
     textura_doctor.py    pre-analysis revision checklist (CLI)
     textura_concordancia_qa.py  QA on 8_Concordancia (duplicates / relation 2nd opinion / extra-musical domain)
     textura_apa7.py      optional APA 7 catalogue for appendix --refs
     textura_stats.py     logistic regression, BF, Hardie LR, CA, profiles
-    textura_plots.py     frequency, clouds, sankey
+    textura_plots.py     frequency (token + curation-axis), clouds, sankey
     textura_legendas.py  plot title JSON
     textura_validacao.py validation helpers
     dominios.tsv         default path→domain rules (auto-loaded by near if present)
@@ -94,7 +95,7 @@ TEXTURA_TUDO_MATRIZ_v7.xlsx
    UNIFORME_near_revisto_LR.xlsx
         │
         ▼
-   UNIFORME_near_revisto_LR_analise.xlsx  + graphs
+   UNIFORME_near_revisto_LR_analise.xlsx  + _g_freq_token + _g_freq_eixos
         │
         ▼
    Anexo_uniforme.docx / Anexo_uniforme_links.docx
@@ -896,7 +897,8 @@ Conflicting root vs canonical files raise rather than choosing silently.
 | `textura_search.py` | Boolean search / Results Excel |
 | `textura_freq.py` | Filterable `_g_freq_token` report (N_hits + n_documentos) |
 | `textura_apendice.py` | DOCX projection, excerpt cleanup, PDF pages |
-| `textura_lexico.py` | Field loading, polarity, axes, `doc_id` |
+| `textura_lexico.py` | Field loading, polarity, pipeline axes, `doc_id`, `aplicar_curadoria` |
+| `textura/lexico.py` | Single-source TSV loaders (`eixos_curadoria.tsv`, poles, domains, …) |
 | `textura_stats.py` | LR, BF, permutations, logistic, CA, profiles |
 | `textura_triagem.py` | Domain filters, OCR noise, false friends, checklist |
 | `textura_doctor.py` | Pre-analysis checklist CLI |

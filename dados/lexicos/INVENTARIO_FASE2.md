@@ -26,6 +26,7 @@ exactamente uma vez» verifica-se por diff/grep contra este inventário.
 | `MODALIDADE` | `textura/config.py` | `dados/lexicos/modalidade.tsv` |
 | `RELACOES_NAO_NUCLEARES` | `textura_triagem.py` | `dados/lexicos/relacoes_nao_nucleares.tsv` |
 | `FALSOS_AMIGOS_FORMAS` | `textura_triagem.py` | `dados/lexicos/falsos_amigos.tsv` |
+| Eixos de curadoria (tese) | `textura.lexico.carregar_eixos_curadoria` | `dados/lexicos/eixos_curadoria.tsv` |
 
 ## Fora de âmbito desta fase (não são word-lists partilhadas)
 
@@ -46,6 +47,9 @@ exactamente uma vez» verifica-se por diff/grep contra este inventário.
 - `dominios_path.tsv`: `padrao` \\t `dominio` (como o actual `dominios.tsv`)
 - `falsos_amigos.tsv`: `forma` \\t `motivo_exclusao`
 - `dominio_taxonomia.tsv`: `dominio` \\t `fonte` (`path`\|`janela`\|`ambos`)
+- `eixos_curadoria.tsv`: `canonical_term` \\t `eixo` \\t `decisao` \\t `motivo`
+  (`decisao` ∈ `retido`\|`excluido`\|`relacionado`). Termo realizado
+  ausente do TSV → `por_classificar` + um aviso; a corrida não aborta.
 
 ## Estado pós-movimento
 

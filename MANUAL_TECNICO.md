@@ -11,7 +11,7 @@ para especialistas, tutorial e exemplos. O protocolo formal em inglês
 
 **Código canónico:** `E:\PYTHON CODES\Term statistics`  
 **Schema:** near ≥ 2  
-**Data deste texto:** 2026-09-05
+**Data deste texto:** 2026-09-19
 
 ---
 
@@ -100,8 +100,12 @@ Ocorrências, `9_Excluidas`).
 A análise (fase 2) lê o livro near, **sincroniza Hits a partir de
 Concordância** (salvo `--so-leitura`) e conta só `nuclear = TRUE` após
 `revisto_por_humano` / override. Gráficos nativos em
-`6_Graficos_barras` e `6_Graficos_familias` são a fonte; os `_*_g_freq_*.xlsx`
-são cópia.
+`6_Graficos_barras` e `6_Graficos_familias` são a fonte do gráfico
+legado por termo; os `_*_g_freq_token.xlsx` são cópia. A fase 2 escreve
+ainda `_g_freq_eixos.png` / `.svg` (famílias realizadas agrupadas pelo
+eixo de **curadoria** em `dados/lexicos/eixos_curadoria.tsv`) e a folha
+`curadoria_fluxo`. Esse eixo de curadoria **não** é a coluna `eixo` do
+Excel (homogeneidade síncrona / invariância diacrónica).
 
 ### 2.3 Casamento lexical e diacríticos
 
@@ -173,14 +177,37 @@ Unidade de desduplicação (`--desduplicacao`) é decisão de protocolo, não
 optimização: `nenhuma` (omissão da análise de frequência por hit),
 `contexto`, `ocorrencia`, `obra_termo`, …
 
+### 2.7 Gráfico de frequência por eixo de curadoria
+
+O gráfico legado `_g_freq_token.png` (uma cor por termo, via
+`cor_canonical`) mantém-se. Um segundo gráfico,
+`barras_agrupadas_por_eixo`, mostra **todas** as famílias lexicais
+realizadas nas atribuições nucleares, agrupadas por eixo de curadoria
+(`invariancia`, `campo_figurativo`, `semelhanca_interna`,
+`consistencia_entre_exemplares`, `variabilidade`, `por_classificar`).
+
+A decisão editorial (`retido` / `relacionado` / `excluido`) não usa cor:
+barra sólida = retido; preenchimento mais claro com contorno = relacionado;
+hachura (`///`) com fundo branco = excluído. Só há duas cores na figura
+(ocorrências vs documentos). Termos com *N* ≤ 2 dentro de cada eixo
+colapsam em `outros (k)`; a lista vai para
+`_g_freq_eixos_legenda.txt`.
+
+`--modo-tese` (omissão: desligado) tira título, subtítulo e rodapé da
+imagem — a legenda vive no Word — e grava PNG a 300 dpi + SVG. A GUI tem
+a mesma opção na caixa «Analisar Excel…».
+
+A frequência **não** equivale à força de associação ao núcleo; as
+medidas de associação constam do Apêndice.
+
 ---
 
 ## 3. O que o programa faz e o que não faz
 
 **Faz:** ler a matriz KWIC; casar um campo lexical pré-mapeado junto do
 nó; separar hit vs ocorrência; ajudar a rever; contar; testar associação
-e polaridade; desenhar barras / famílias / nuvens / Sankey; exportar
-concordância DOCX.
+e polaridade; desenhar barras / famílias / eixos de curadoria / nuvens /
+Sankey; exportar concordância DOCX.
 
 **Não faz:** re-OCR; recuperar offsets no PDF original; detectar língua
 por linha; fundir radicais de línguas diferentes (`static` / `estátic`);
@@ -215,6 +242,9 @@ resultado_pesquisa_near.xlsx          ← rever aqui
         │
         ▼
 resultado_pesquisa_near_analise.xlsx  + _g_freq_*.xlsx/.png
+                                        + _g_freq_eixos.png/.svg
+                                        + _g_freq_eixos_legenda.txt
+                                        + curadoria_fluxo.tsv
 ```
 
 Raiz do código: `E:\PYTHON CODES\Term statistics`. Não use cópias no
@@ -250,7 +280,10 @@ língua única). Trabalhe numa pasta só para a corrida
 8. Na GUI: **Analisar Excel…** sobre o `*_near.xlsx` (não sobre
    `resultado_pesquisa.xlsx`).
 9. Leia `1_Resumo`, `6_Graficos_barras`, `6_Graficos_familias`,
-   `0_Avisos`. Confira se Concordância e Hits têm o mesmo *N*.
+   `curadoria_fluxo`, `0_Avisos`. Confira se Concordância e Hits têm o
+   mesmo *N*. Ao lado do Excel: `_g_freq_token.png` (legado) e
+   `_g_freq_eixos.png` (curadoria; com `--modo-tese` também `.svg` e
+   `_g_freq_eixos_legenda.txt`).
 
 ### 5.2 Pela linha de comandos (reproduzível)
 
@@ -271,6 +304,7 @@ Revisão no Excel, depois:
 
 ```bat
 python textura_analise.py --xlsx "C:\Users\lmr20\Desktop\TESTE\resultado_pesquisa_near.xlsx"
+python textura_analise.py --xlsx "C:\Users\lmr20\Desktop\TESTE\resultado_pesquisa_near.xlsx" --modo-tese
 ```
 
 Relatório de frequência à parte (opcional):
@@ -289,6 +323,7 @@ python textura_freq.py --xlsx "C:\Users\lmr20\Desktop\TESTE\resultado_pesquisa_n
 | Exclusões | `9_Excluidas` = linhas com `nuclear = FALSE` |
 | Etiqueta certa | `estátic*` → coluna `canonical_term` = `estátic`, não `estaticas` |
 | Avisos esperados | `0_Avisos`: colinearidade eixo/polaridade; termos sem `:E`/`:V` |
+| Curadoria de tese | `_g_freq_eixos.png` + `curadoria_fluxo`; TSV `eixos_curadoria.tsv` |
 
 Se Concordância e Hits divergirem e **não** quiser que a análise
 reescreva Hits, use `textura_analise.py --so-leitura`.
@@ -419,6 +454,11 @@ Regras práticas:
 O ficheiro gerado pela pesquisa (`*_termos_adjudicados.txt`) pode ser
 editado à mão **antes** de voltar a extrair o NEAR.
 
+A curadoria de tese (eixo + retido/relacionado/excluído) é outro
+ficheiro: `dados/lexicos/eixos_curadoria.tsv`. Não substitui o léxico
+de padrões; só classifica as famílias **já realizadas** no gráfico
+`_g_freq_eixos`. Ver §2.7.
+
 ---
 
 ## 8. Línguas, acentos e nós
@@ -481,8 +521,9 @@ Para um inventário só FR (o nó escreve-se *texture*), use `--lingua fr`.
 | `Duplicados` | Passagens sobrepostas / vários caminhos |
 | `1_Resumo` | Indicadores da fase 2 |
 | `2_Frequencias` … `15_Perfis` | Estatística |
-| `6_Graficos_barras` | Token canónico (fonte do gráfico) |
+| `6_Graficos_barras` | Token canónico (fonte do gráfico legado) |
 | `6_Graficos_familias` | Família substantivo |
+| `curadoria_fluxo` | Brutas vs nucleares por termo + eixo/decisão de curadoria |
 | `16_Kappa` | Só se passou `--kappa-cego` |
 | `0_Avisos` | Colinearidades, gráficos falhados, polaridade em falta |
 
@@ -550,6 +591,7 @@ Cwd recomendado: `E:\PYTHON CODES\Term statistics`.
 | `--plano-a-priori` | JSON/YAML; prevalece |
 | `--kappa-cego` | Segundo revisor → `16_Kappa` |
 | `--desduplicacao` | Ver §2.6 |
+| `--modo-tese` | `_g_freq_eixos` sem título na imagem; PNG 300 dpi + SVG (omissão: desligado) |
 
 ### `textura_freq.py`
 
@@ -581,6 +623,10 @@ Cwd recomendado: `E:\PYTHON CODES\Term statistics`.
    `6_Graficos_*` do livro `*_analise.xlsx`.
 10. **κ e plano vazios.** Não foram pedidos na corrida; o *N* é de um
     só revisor.
+11. **Ler a frequência como associação.** `_g_freq_eixos` conta
+    atribuições nucleares. A força de associação está em `9_Associacao`
+    / Apêndice. Revise `eixos_curadoria.tsv` se um termo estiver em
+    `por_classificar`.
 
 ---
 
@@ -600,6 +646,9 @@ Cwd recomendado: `E:\PYTHON CODES\Term statistics`.
 | NEAR/*n* | Distância máxima em tokens, mesma frase por omissão |
 | Dobragem de acentos | `é`≡`e` só para casar; a forma mostrada não muda |
 | `--lingua` | Filtro do paradigma do nó + modelo spaCy da corrida |
+| Eixo (pipeline) | Coluna `eixo` do Excel: homogeneidade síncrona / invariância diacrónica |
+| Eixo de curadoria | Tabela `eixos_curadoria.tsv` (retido / relacionado / excluído) para o gráfico de tese |
+| `--modo-tese` | Figura de eixos sem título/rodapé; a legenda vai no Word |
 
 ---
 

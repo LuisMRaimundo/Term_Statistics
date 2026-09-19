@@ -157,6 +157,11 @@ Se estiver indeciso: deixe `indeterminada`, `nuclear=FALSE`, e explique em `nota
 
 Consulte `Config_lexico` para ver a proposta automática; pode divergir dela se o contexto o exigir.
 
+A coluna `eixo` acima é a do **pipeline** (síncrono / diacrónico). A
+curadoria de tese (retido / relacionado / excluído por família lexical)
+vive em `dados/lexicos/eixos_curadoria.tsv` e só entra no gráfico
+`_g_freq_eixos` / folha `curadoria_fluxo` na fase 2 — não a edite aqui.
+
 ### Passo E — Domínio e exclusões temáticas
 
 1. Folha `Dominios_por_rever`: ficheiros ainda sem domínio.  
