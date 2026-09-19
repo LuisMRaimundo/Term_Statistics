@@ -100,7 +100,11 @@ DESCRICAO_COLUNAS_HITS: dict[str, str] = {
     "relacao_sintactica": "Classe sintáctica (taxonomia nuclear/não-nuclear)",
     "polaridade_base": "Polaridade antes de inversão por negação",
     "polaridade": "Polaridade efectiva (estabilidade / variabilidade)",
-    "eixo": "Eixo semântico (homogeneidade_sincronica / …)",
+    "eixo": (
+        "Eixo semântico do pipeline (homogeneidade_sincronica / "
+        "invariancia_diacronica / ambos). Distinto da curadoria de tese "
+        "em dados/lexicos/eixos_curadoria.tsv."
+    ),
     "censurado_esq": "Contexto truncado à esquerda na matriz",
     "censurado_dir": "Contexto truncado à direita na matriz",
     "idx_no": "Índice token do nó na janela",
