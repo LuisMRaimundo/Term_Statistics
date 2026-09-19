@@ -1,0 +1,36 @@
+# eixos_curadoria.tsv
+# Curadoria do autor: eixo semântico e decisão editorial.
+# Colunas (tab): canonical_term, eixo, decisao, motivo
+# decisao ∈ {retido, excluido, relacionado}
+#
+# Famílias similar*/equal* (eixo=consistencia_entre_exemplares,
+# decisao=excluido): ausentes do léxico adjudicado actual (SEARCH_TERMS)
+# — não semeadas.
+# Famílias figurativas de estase (solid, suspend, crystalli, lisse, conge,
+# flat, monolith, motionles, immobil, plano, plane, froz…;
+# eixo=campo_figurativo, decisao=relacionado): ausentes do léxico
+# adjudicado actual — não semeadas.
+canonical_term	eixo	decisao	motivo
+uniform	invariancia	retido	
+invariable	invariancia	retido	
+unvarying	invariancia	retido	
+immutable	invariancia	retido	
+unchanging	invariancia	retido	
+constant	invariancia	retido	
+static	invariancia	retido	
+stable	invariancia	retido	
+consistent	invariancia	relacionado	
+regular	invariancia	relacionado	
+steady	invariancia	relacionado	
+sustained	invariancia	relacionado	
+monotonous	invariancia	relacionado	
+homogeneous	semelhanca_interna	excluido	remete para VD5, VD7
+heterogeneous	semelhanca_interna	excluido	remete para VD5, VD7
+varied	variabilidade	excluido	
+varying	variabilidade	excluido	
+changing	variabilidade	excluido	
+irregular	variabilidade	excluido	
+unequal	variabilidade	excluido	
+diverse	variabilidade	excluido	
+mutable	variabilidade	excluido	
+multiform	variabilidade	excluido	

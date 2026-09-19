@@ -40,6 +40,7 @@ def _limpar_caches() -> None:
     carregar_falsos_amigos.cache_clear()
     carregar_dominio_taxonomia.cache_clear()
     carregar_dominios_validos_path.cache_clear()
+    carregar_eixos_curadoria.cache_clear()
     _load_frozenset.cache_clear()
 
 
@@ -268,6 +269,51 @@ def carregar_dominio_taxonomia() -> Dict[str, str]:
                 f"Léxico {path}: linha {i} dominio/fonte inválidos: {line!r}"
             )
         out[dom] = fonte
+    return out
+
+
+DECISOES_CURADORIA = frozenset({"retido", "excluido", "relacionado"})
+
+
+@lru_cache(maxsize=1)
+def carregar_eixos_curadoria() -> Dict[str, Dict[str, str]]:
+    """Léxico de curadoria: canonical_term → {eixo, decisao, motivo}.
+
+    Termos presentes nos dados e ausentes do TSV não são resolvidos aqui —
+    o chamador (`aplicar_curadoria`) atribui ``por_classificar``.
+    """
+    path = dir_lexicos() / "eixos_curadoria.tsv"
+    linhas = _ler_linhas(path)
+    if linhas[0].split("\t")[0] == "canonical_term":
+        linhas = linhas[1:]
+    if not linhas:
+        raise LexicoError(f"Léxico sem entradas após o cabeçalho: {path}")
+    out: Dict[str, Dict[str, str]] = {}
+    for i, line in enumerate(linhas, start=1):
+        # comentários no fim da linha
+        line = line.split("#", 1)[0].rstrip()
+        if not line:
+            continue
+        parts = line.split("\t")
+        if len(parts) < 3:
+            raise LexicoError(
+                f"Léxico {path}: linha {i} deve ter pelo menos 3 colunas "
+                f"(canonical_term, eixo, decisao): {line!r}"
+            )
+        termo = parts[0].strip()
+        eixo = parts[1].strip()
+        decisao = parts[2].strip()
+        motivo = parts[3].strip() if len(parts) > 3 else ""
+        if not termo or not eixo or not decisao:
+            raise LexicoError(
+                f"Léxico {path}: linha {i} com campo obrigatório vazio: {line!r}"
+            )
+        if decisao not in DECISOES_CURADORIA:
+            raise LexicoError(
+                f"Léxico {path}: linha {i} decisao inválida {decisao!r} "
+                f"(esperado {sorted(DECISOES_CURADORIA)})"
+            )
+        out[termo] = {"eixo": eixo, "decisao": decisao, "motivo": motivo}
     return out
 
 

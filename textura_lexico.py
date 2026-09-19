@@ -330,6 +330,69 @@ def assert_output_sem_no(canonical_terms) -> None:
                 f"e um padrao do no.")
 
 
+def aplicar_curadoria(
+        termos,
+        mapa: dict[str, dict[str, str]] | None = None,
+        ) -> tuple[dict[str, dict[str, str]], list[str]]:
+    """Junta eixo/decisão/motivo. Termo em falta → por_classificar + aviso.
+
+    Não rebenta se o termo existir nos dados e faltar no TSV.
+    """
+    import warnings
+
+    from textura.lexico import carregar_eixos_curadoria
+
+    src = mapa if mapa is not None else carregar_eixos_curadoria()
+    out: dict[str, dict[str, str]] = {}
+    em_falta: list[str] = []
+    vistos: set[str] = set()
+    for termo in termos:
+        chave = str(termo)
+        if chave in vistos:
+            continue
+        vistos.add(chave)
+        info = src.get(chave)
+        if info is None:
+            em_falta.append(chave)
+            out[chave] = {
+                "eixo": "por_classificar",
+                "decisao": "por_classificar",
+                "motivo": "",
+            }
+        else:
+            out[chave] = {
+                "eixo": str(info.get("eixo") or "por_classificar"),
+                "decisao": str(info.get("decisao") or "por_classificar"),
+                "motivo": str(info.get("motivo") or ""),
+            }
+    if em_falta:
+        warnings.warn(
+            "Termos sem entrada em eixos_curadoria.tsv "
+            f"(por_classificar): {', '.join(sorted(em_falta))}",
+            UserWarning,
+            stacklevel=2,
+        )
+    return out, em_falta
+
+
+def rotulos_exibicao_lexico(
+        termos,
+        campo: dict[str, list[str]] | None = None,
+        ) -> dict[str, str]:
+    """Acrescenta '*' se algum padrão do termo no léxico termina em '*'."""
+    if campo is None:
+        campo = {k: list(v.patterns) for k, v in SEARCH_TERMS.items()}
+    out: dict[str, str] = {}
+    for termo in termos:
+        chave = str(termo)
+        pads = campo.get(chave, [])
+        if any(str(p).endswith("*") for p in pads):
+            out[chave] = f"{chave}*"
+        else:
+            out[chave] = chave
+    return out
+
+
 def eixo_semantico(tipo: str) -> str:
     sinc = {"uniform", "homogeneous", "heterogeneous", "diverse",
             "varied", "unequal", "irregular", "multiform", "mutable"}

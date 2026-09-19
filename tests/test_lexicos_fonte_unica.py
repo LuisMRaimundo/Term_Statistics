@@ -29,6 +29,7 @@ TSVS_OBRIGATORIOS = (
     "dominio_taxonomia.tsv",
     "dominios_path.tsv",
     "falsos_amigos.tsv",
+    "eixos_curadoria.tsv",
 )
 
 CTX_GEO = (
