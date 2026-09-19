@@ -15,6 +15,7 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 import numpy as np
 from matplotlib.colors import LinearSegmentedColormap
+from matplotlib.patches import Patch
 
 # Paleta editorial: tinta, ardósia, acento oliva — sem roxo/neon
 INK = "#1C2429"
@@ -105,7 +106,8 @@ def _rodape(fig, texto: str) -> None:
 
 
 def _acabar(fig, ax, destino: Path, dpi: int = 150,
-            titulo: str = "", subtitulo: str = "", rodape: str = "") -> None:
+            titulo: str = "", subtitulo: str = "", rodape: str = "",
+            fechar: bool = True) -> None:
     ax.tick_params(length=0)
     for spine in ("left", "bottom"):
         ax.spines[spine].set_color(RULE)
@@ -118,7 +120,8 @@ def _acabar(fig, ax, destino: Path, dpi: int = 150,
         _rodape(fig, rodape)
     fig.savefig(destino, dpi=dpi, bbox_inches="tight",
                 pad_inches=0.35, facecolor=fig.get_facecolor())
-    plt.close(fig)
+    if fechar:
+        plt.close(fig)
 
 
 def embeber_imagens(ws, caminhos, *, largura_px: int = EXCEL_LARGURA_PX,
@@ -479,6 +482,291 @@ def barras_horizontais_agrupadas(
     ax.legend(loc="lower right", frameon=True, fancybox=False,
               edgecolor=RULE, facecolor=PANEL, framealpha=0.95)
     _acabar(fig, ax, destino, titulo=titulo, subtitulo=subtitulo, rodape=rodape)
+
+
+ORDEM_EIXOS_CURADORIA = (
+    "invariancia",
+    "campo_figurativo",
+    "semelhanca_interna",
+    "consistencia_entre_exemplares",
+    "variabilidade",
+    "por_classificar",
+)
+
+ROTULOS_EIXO_PT = {
+    "invariancia": "Invariância",
+    "campo_figurativo": "Campo figurativo",
+    "semelhanca_interna": "Semelhança interna",
+    "consistencia_entre_exemplares": "Consistência entre exemplares",
+    "variabilidade": "Variabilidade",
+    "por_classificar": "Por classificar",
+}
+
+
+def _agregar_por_eixo(
+    df,
+    *,
+    col_termo: str = "canonical_term",
+    col_a: str = "N_hits",
+    col_b: str = "n_documentos",
+    col_eixo: str = "eixo",
+    col_decisao: str = "decisao",
+    ordem_eixos=None,
+    limiar_cauda: float = 2,
+):
+    """Agrupa por eixo, ordena por ``col_a`` e colapsa a cauda.
+
+    Devolve ``(df_plot, cauda)`` onde ``cauda`` é ``{eixo: [termos]}``.
+    """
+    import pandas as pd
+
+    cauda: dict[str, list[str]] = {}
+    cols = [col_termo, col_a, col_b, col_eixo, col_decisao]
+    vazio = pd.DataFrame(columns=cols)
+    if df is None or len(df) == 0:
+        return vazio, cauda
+    tab = df.copy()
+    tab[col_termo] = tab[col_termo].astype(str)
+    tab[col_eixo] = tab[col_eixo].astype(str)
+    tab[col_decisao] = tab[col_decisao].astype(str)
+    tab[col_a] = pd.to_numeric(tab[col_a], errors="coerce").fillna(0)
+    tab[col_b] = pd.to_numeric(tab[col_b], errors="coerce").fillna(0)
+    ordem = list(ordem_eixos or ORDEM_EIXOS_CURADORIA)
+    presentes = list(dict.fromkeys(tab[col_eixo]))
+    extra = sorted(e for e in presentes if e not in ordem)
+    ordem_final = [e for e in ordem if e in set(presentes)] + extra
+    blocos = []
+    for eixo in ordem_final:
+        g = tab.loc[tab[col_eixo] == eixo].copy()
+        g = g.sort_values([col_a, col_termo], ascending=[False, True])
+        keep = g.loc[g[col_a] > limiar_cauda].copy()
+        drop = g.loc[g[col_a] <= limiar_cauda]
+        if len(drop):
+            cauda[eixo] = [str(t) for t in drop[col_termo]]
+            decisao_outros = (
+                str(drop[col_decisao].iloc[0])
+                if drop[col_decisao].nunique() == 1
+                else "retido"
+            )
+            outros = pd.DataFrame([{
+                col_termo: f"outros ({len(drop)})",
+                col_a: float(drop[col_a].sum()),
+                col_b: float(drop[col_b].sum()),
+                col_eixo: eixo,
+                col_decisao: decisao_outros,
+            }])
+            keep = pd.concat([keep, outros], ignore_index=True)
+        if len(keep):
+            blocos.append(keep[cols])
+    if not blocos:
+        return vazio, cauda
+    return pd.concat(blocos, ignore_index=True), cauda
+
+
+def _rotulo_barra_eixo(termo: str, rotulos_exibicao=None) -> str:
+    s = str(termo)
+    if s.startswith("outros ("):
+        return s
+    if rotulos_exibicao is not None:
+        return str(rotulos_exibicao.get(termo, s))
+    try:
+        from textura_lexico import SEARCH_TERMS
+    except ImportError:
+        return s
+    cfg = SEARCH_TERMS.get(s)
+    if cfg is not None and any(str(p).endswith("*") for p in cfg.patterns):
+        return f"{s}*"
+    return s
+
+
+def _estilo_decisao(decisao: str, cor: str) -> dict:
+    """Codifica a decisão sem depender da cor (seguro em cinzentos)."""
+    d = str(decisao or "")
+    if d == "excluido":
+        return {
+            "facecolor": "white",
+            "edgecolor": cor,
+            "hatch": "///",
+            "linewidth": 0.8,
+            "alpha": 1.0,
+        }
+    if d == "relacionado":
+        return {
+            "facecolor": cor,
+            "edgecolor": cor,
+            "linewidth": 0.6,
+            "alpha": 0.45,
+        }
+    return {
+        "facecolor": cor,
+        "edgecolor": "none",
+        "linewidth": 0.0,
+        "alpha": 1.0,
+    }
+
+
+def barras_agrupadas_por_eixo(
+    df, destino: Path, *,
+    col_termo: str = "canonical_term",
+    col_a: str = "N_hits",
+    col_b: str = "n_documentos",
+    col_eixo: str = "eixo",
+    col_decisao: str = "decisao",
+    ordem_eixos=None,
+    limiar_cauda: float = 2,
+    rotulos_exibicao=None,
+    modo_tese: bool = False,
+    legendas=None,
+    dpi: int = 300,
+    titulo: str = "",
+    subtitulo: str = "",
+    rodape: str = "",
+    fechar: bool = True,
+):
+    """Barras emparelhadas agrupadas por eixo, com a curadoria visível.
+
+    Devolve ``(cauda, fig)``. ``fig`` é ``None`` se ``fechar=True``.
+    """
+    aplicar_estilo()
+    destino = Path(destino)
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    tab, cauda = _agregar_por_eixo(
+        df, col_termo=col_termo, col_a=col_a, col_b=col_b,
+        col_eixo=col_eixo, col_decisao=col_decisao,
+        ordem_eixos=ordem_eixos, limiar_cauda=limiar_cauda,
+    )
+    if not len(tab):
+        return cauda, None
+
+    leg = dict(legendas or {})
+    nome_a = str(leg.get("serie_a") or "Ocorrências")
+    nome_b = str(leg.get("serie_b") or "Documentos")
+    nome_ret = str(leg.get("decisao_retido") or "Retido")
+    nome_rel = str(leg.get("decisao_relacionado") or "Relacionado")
+    nome_exc = str(leg.get("decisao_excluido") or "Excluído")
+    xlab = str(
+        leg.get("xlabel")
+        or ("Frequência (ocorrências; documentos)" if modo_tese
+            else "Ocorrências (N_hits) e documentos")
+    )
+    if modo_tese:
+        xlab = "Frequência (ocorrências; documentos)"
+    rotulos_eixo = dict(ROTULOS_EIXO_PT)
+    for chave, valor in (leg or {}).items():
+        if chave.startswith("eixo_") and valor:
+            rotulos_eixo[chave[len("eixo_"):]] = str(valor)
+
+    # layout: cabeçalho de grupo + termos (topo → fundo)
+    itens: list[tuple[str, object]] = []
+    for eixo, g in tab.groupby(col_eixo, sort=False):
+        itens.append(("grupo", str(eixo)))
+        for rec in g.itertuples(index=False):
+            itens.append(("termo", rec))
+
+    n_linhas = len(itens)
+    n_grupos = sum(1 for tipo, _ in itens if tipo == "grupo")
+    alt = max(4.0, min(34.0, 0.42 * n_linhas + 0.35 * n_grupos + 2.0))
+    fig, ax = plt.subplots(figsize=(8.8, alt))
+    if modo_tese:
+        fig.patch.set_facecolor("white")
+        ax.set_facecolor("white")
+
+    cor_a = ACCENT
+    cor_b = _clarear_hex(ACCENT)
+    h = 0.34
+    y_ticks = []
+    y_labs = []
+    y_grupos = []
+    y = float(n_linhas - 1)
+    for tipo, payload in itens:
+        if tipo == "grupo":
+            y_grupos.append((y, rotulos_eixo.get(payload, payload)))
+            y -= 1.0
+            continue
+        rec = payload
+        termo = str(getattr(rec, col_termo))
+        va = float(getattr(rec, col_a))
+        vb = float(getattr(rec, col_b))
+        decisao = str(getattr(rec, col_decisao))
+        est_a = _estilo_decisao(decisao, cor_a)
+        est_b = _estilo_decisao(decisao, cor_b)
+        ax.barh(y - h / 2, va, height=h, zorder=3, **est_a)
+        ax.barh(y + h / 2, vb, height=h, zorder=3, **est_b)
+        y_ticks.append(y)
+        y_labs.append(_rotulo_barra_eixo(termo, rotulos_exibicao))
+        y -= 1.0
+
+    ax.set_yticks(y_ticks)
+    ax.set_yticklabels(y_labs)
+    for y_g, rot in y_grupos:
+        ax.text(
+            0.0, y_g, rot, transform=ax.get_yaxis_transform(),
+            ha="right", va="center", fontsize=8.2, fontweight="semibold",
+            color=SLATE, fontfamily="serif", clip_on=False,
+        )
+    ax.set_xlabel(xlab)
+    ax.xaxis.set_major_locator(mticker.MaxNLocator(integer=True, nbins=6))
+    ax.grid(axis="x", zorder=0)
+    ax.set_axisbelow(True)
+    ax.set_ylim(-0.8, n_linhas - 0.2)
+    xmax = float(max(
+        tab[col_a].max() if len(tab) else 1,
+        tab[col_b].max() if len(tab) else 1,
+        1,
+    ))
+    ax.set_xlim(0, xmax * 1.18)
+
+    proxy_series = [
+        Patch(facecolor=cor_a, edgecolor="none", label=nome_a),
+        Patch(facecolor=cor_b, edgecolor="none", label=nome_b),
+    ]
+    proxy_dec = [
+        Patch(facecolor=cor_a, edgecolor="none", label=nome_ret),
+        Patch(facecolor=cor_a, edgecolor=cor_a, alpha=0.45, label=nome_rel),
+        Patch(facecolor="white", edgecolor=cor_a, hatch="///", label=nome_exc),
+    ]
+    leg_s = ax.legend(
+        handles=proxy_series, loc="lower right", title="Séries",
+        frameon=True, fancybox=False, edgecolor=RULE, facecolor=PANEL,
+        framealpha=0.95,
+    )
+    ax.add_artist(leg_s)
+    ax.legend(
+        handles=proxy_dec, loc="upper right", title="Decisão",
+        frameon=True, fancybox=False, edgecolor=RULE, facecolor=PANEL,
+        framealpha=0.95,
+    )
+
+    fig.subplots_adjust(left=0.28, right=0.96, top=0.96, bottom=0.10)
+    if modo_tese:
+        ax.tick_params(length=0)
+        for spine in ("left", "bottom"):
+            ax.spines[spine].set_color(RULE)
+            ax.spines[spine].set_linewidth(0.9)
+        fig.savefig(
+            destino, dpi=dpi, bbox_inches="tight", pad_inches=0.35,
+            facecolor="white",
+        )
+        fig.savefig(
+            destino.with_suffix(".svg"), bbox_inches="tight", pad_inches=0.35,
+            facecolor="white",
+        )
+    else:
+        tit = titulo or str(leg.get("titulo") or "Frequência por eixo semântico")
+        sub = subtitulo or str(leg.get("subtitulo") or "")
+        _acabar(
+            fig, ax, destino, dpi=dpi, titulo=tit, subtitulo=sub,
+            rodape=rodape, fechar=False,
+        )
+        fig.savefig(
+            destino.with_suffix(".svg"), bbox_inches="tight", pad_inches=0.35,
+            facecolor=fig.get_facecolor(),
+        )
+
+    if fechar:
+        plt.close(fig)
+        return cauda, None
+    return cauda, fig
 
 
 def histograma_near(dists, destino: Path, *,
