@@ -27,6 +27,11 @@ ACCENT = "#2F5D50"
 ACCENT_WARM = "#8B5E3C"
 ACCENT_COOL = "#3A536B"
 SERIES = ["#2F5D50", "#8B5E3C", "#3A536B", "#6B7C8A", "#A67C52"]
+# Paleta de famílias lexicais (cor = hash estável de canonical_term)
+PAL_FAMILIA = [
+    "#1F3D36", "#2F5D50", "#3A536B", "#5A4634", "#2A4A42", "#4A3A2A",
+    "#6B3A2A", "#3D5A4C", "#4A3F5C", "#7A5A32", "#2C4A5A", "#5C4A3A",
+]
 
 _CMAP_DOCS = LinearSegmentedColormap.from_list(
     "textura_docs", ["#A8C4B8", "#2F5D50"])
@@ -154,6 +159,225 @@ def embeber_imagens(ws, caminhos, *, largura_px: int = EXCEL_LARGURA_PX,
     return linha
 
 
+def cor_canonical(term: str) -> str:
+    """Cor determinística da família lexical (``canonical_term``)."""
+    import zlib
+    return PAL_FAMILIA[zlib.crc32(str(term or "").encode("utf-8")) % len(PAL_FAMILIA)]
+
+
+def cores_por_forma(familia: dict) -> dict:
+    """``matched_form`` → hex, derivado do ``canonical_term``."""
+    return {form: cor_canonical(term) for form, term in (familia or {}).items()}
+
+
+def _clarear_hex(hex_cor: str, frac: float = 0.42) -> str:
+    h = hex_cor.lstrip("#")
+    r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    r = int(r + (255 - r) * frac)
+    g = int(g + (255 - g) * frac)
+    b = int(b + (255 - b) * frac)
+    return f"#{r:02X}{g:02X}{b:02X}"
+
+
+def _rgb(hex_cor: str) -> str:
+    return str(hex_cor or ACCENT).lstrip("#").upper()
+
+
+def _pares_barras_agrupadas(rotulos, valores_a, valores_b, cores=None,
+                            max_n: int | None = None):
+    """Ordena por frequência descendente. Devolve ``(pares, nota_teto)``."""
+    if not rotulos:
+        return [], ""
+    if cores is None or len(cores) != len(rotulos):
+        cores = [cor_canonical(r) for r in rotulos]
+    pares = sorted(
+        zip(valores_a, valores_b, rotulos, cores), key=lambda t: -t[0])
+    extra = ""
+    n_orig = len(rotulos)
+    if max_n is not None and max_n < n_orig:
+        pares = pares[:max_n]
+        extra = f"showing {max_n} of {n_orig} terms; bar cap = {max_n}"
+    return pares, extra
+
+
+def _ponto_barra(idx: int, hex_cor: str):
+    from openpyxl.chart.series import DataPoint
+    from openpyxl.chart.shapes import GraphicalProperties
+    from openpyxl.drawing.line import LineProperties
+
+    pt = DataPoint(idx=idx)
+    pt.spPr = GraphicalProperties(solidFill=_rgb(hex_cor))
+    pt.spPr.ln = LineProperties(noFill=True)
+    return pt
+
+
+def adicionar_grafico_barras_agrupadas(
+    ws,
+    *,
+    n: int,
+    linha_cab: int = 1,
+    col_cat: int = 1,
+    col_a: int = 2,
+    col_b: int = 3,
+    titulo: str = "",
+    xlabel: str = "Ocorrências (N_hits)",
+    cores: list | None = None,
+    ancora: str = "E2",
+):
+    """Gráfico nativo do Excel: barras horizontais emparelhadas (N_hits / docs)."""
+    from openpyxl.chart import BarChart, Reference
+    from openpyxl.chart.axis import ChartLines
+    from openpyxl.chart.shapes import GraphicalProperties
+    from openpyxl.drawing.line import LineProperties
+
+    if n <= 0:
+        return None
+
+    chart = BarChart()
+    chart.type = "bar"
+    chart.grouping = "clustered"
+    chart.varyColors = False
+    chart.style = 10
+    if titulo:
+        chart.title = titulo
+    # type="bar": x = categorias (eixo vertical), y = valores (eixo horizontal)
+    chart.y_axis.title = xlabel
+    chart.legend.position = "b"
+    chart.gapWidth = 70
+    chart.overlap = 0
+    chart.width = 18.0
+    chart.height = max(10.0, min(46.0, 0.48 * n + 4.8))
+
+    dados = Reference(
+        ws, min_col=col_a, max_col=col_b,
+        min_row=linha_cab, max_row=linha_cab + n)
+    cats = Reference(
+        ws, min_col=col_cat,
+        min_row=linha_cab + 1, max_row=linha_cab + n)
+    chart.add_data(dados, titles_from_data=True)
+    chart.set_categories(cats)
+
+    # Primeira linha da tabela = barra de cima (como no PNG)
+    chart.x_axis.scaling.orientation = "maxMin"
+    chart.y_axis.crosses = "max"
+    chart.y_axis.majorGridlines = ChartLines()
+
+    cores = list(cores or [])
+    while len(cores) < n:
+        cores.append(ACCENT)
+    cores_b = [_clarear_hex(c) for c in cores]
+    for series, fills, fallback in (
+        (chart.series[0], cores, ACCENT),
+        (chart.series[1], cores_b, _clarear_hex(ACCENT)),
+    ):
+        series.spPr = GraphicalProperties(solidFill=_rgb(fallback))
+        series.spPr.ln = LineProperties(noFill=True)
+        series.dPt = [_ponto_barra(i, fills[i]) for i in range(n)]
+
+    try:
+        chart.graphical_properties.solidFill = _rgb(PAPER)
+    except Exception:
+        pass
+
+    ws.add_chart(chart, ancora)
+    return chart
+
+
+def barras_horizontais_agrupadas_xlsx(
+    rotulos, valores_a, valores_b, destino: Path, *,
+    titulo: str, subtitulo: str = "",
+    nome_a: str = "N_hits", nome_b: str = "n_documentos",
+    xlabel: str = "Ocorrências",
+    rodape: str = "TEXTURA · análise de corpus",
+    max_n: int | None = None,
+    cores: list | None = None,
+    nome_cat: str = "canonical_term",
+):
+    """Excel editável com os mesmos dados e um gráfico nativo emparelhado."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Font, PatternFill
+
+    destino = Path(destino)
+    if not rotulos:
+        return None
+    pares, extra = _pares_barras_agrupadas(
+        rotulos, valores_a, valores_b, cores, max_n)
+    if extra:
+        subtitulo = f"{subtitulo} · {extra}".strip(" ·")
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Frequência"
+
+    fill_head = PatternFill("solid", fgColor="E8E4DC")
+    font_tit = Font(name="Cambria", size=14, bold=True, color=_rgb(INK))
+    font_sub = Font(name="Calibri", size=9, color=_rgb(MUTED))
+    font_head = Font(name="Arial", size=10, bold=True, color=_rgb(INK))
+    font_cell = Font(name="Calibri", size=10, color=_rgb(INK))
+    font_note = Font(name="Calibri", size=8, italic=True, color=_rgb(MUTED))
+
+    ws.merge_cells("A1:C1")
+    ws["A1"] = titulo
+    ws["A1"].font = font_tit
+    ws["A1"].alignment = Alignment(wrap_text=True, vertical="center")
+    ws.row_dimensions[1].height = 22
+
+    ws.merge_cells("A2:C2")
+    ws["A2"] = subtitulo
+    ws["A2"].font = font_sub
+    ws["A2"].alignment = Alignment(wrap_text=True, vertical="center")
+    ws.row_dimensions[2].height = 36
+
+    ws.merge_cells("A3:C3")
+    ws["A3"] = (
+        "Copia da folha 6_Graficos_barras / 6_Graficos_familias do livro "
+        "*_analise.xlsx (fonte). Altere N_hits ou n_documentos — o grafico "
+        "actualiza-se. Cor: clique na barra -> Formatar ponto de dados."
+    )
+    ws["A3"].font = font_note
+    ws["A3"].alignment = Alignment(wrap_text=True, vertical="center")
+    ws.row_dimensions[3].height = 30
+
+    linha_cab = 5
+    for col, cab in enumerate((nome_cat, nome_a, nome_b), 1):
+        cel = ws.cell(linha_cab, col, cab)
+        cel.font = font_head
+        cel.fill = fill_head
+
+    cores_ord = []
+    for i, (va, vb, lab, cor) in enumerate(pares):
+        row = linha_cab + 1 + i
+        ws.cell(row, 1, str(lab)).font = font_cell
+        c_hits = ws.cell(row, 2, int(round(float(va))))
+        c_docs = ws.cell(row, 3, int(round(float(vb))))
+        c_hits.font = font_cell
+        c_docs.font = font_cell
+        cores_ord.append(cor)
+
+    n = len(pares)
+    rod_row = linha_cab + n + 2
+    ws.merge_cells(start_row=rod_row, start_column=1,
+                   end_row=rod_row, end_column=3)
+    ws.cell(rod_row, 1, rodape).font = font_note
+
+    ws.column_dimensions["A"].width = 28
+    ws.column_dimensions["B"].width = 14
+    ws.column_dimensions["C"].width = 16
+    ws.freeze_panes = "A6"
+    ws.sheet_properties.tabColor = _rgb(ACCENT)
+    ws.auto_filter.ref = f"A{linha_cab}:C{linha_cab + n}"
+
+    adicionar_grafico_barras_agrupadas(
+        ws, n=n, linha_cab=linha_cab,
+        titulo=titulo, xlabel=xlabel,
+        cores=cores_ord, ancora="E2",
+    )
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    wb.save(destino)
+    wb.close()
+    return destino
+
+
 def barras_horizontais(rotulos, valores, destino: Path, *,
                        titulo: str, subtitulo: str = "",
                        xlabel: str = "Ocorrências",
@@ -164,8 +388,12 @@ def barras_horizontais(rotulos, valores, destino: Path, *,
     if not rotulos:
         return
     pares = sorted(zip(valores, rotulos), key=lambda t: -t[0])
+    n_orig = len(pares)
     if max_n is not None:
         pares = pares[:max_n]
+        if max_n < n_orig:
+            extra = f"showing {max_n} of {n_orig} terms; bar cap = {max_n}"
+            subtitulo = f"{subtitulo} · {extra}".strip(" ·")
     valores = [p[0] for p in pares]
     rotulos = [p[1] for p in pares]
     n = len(rotulos)
@@ -200,6 +428,56 @@ def barras_horizontais(rotulos, valores, destino: Path, *,
                 fontfamily="sans-serif", zorder=4)
 
     ax.set_xlim(0, xmax * 1.14)
+    _acabar(fig, ax, destino, titulo=titulo, subtitulo=subtitulo, rodape=rodape)
+
+
+def barras_horizontais_agrupadas(
+    rotulos, valores_a, valores_b, destino: Path, *,
+    titulo: str, subtitulo: str = "",
+    nome_a: str = "N_hits", nome_b: str = "n_documentos",
+    xlabel: str = "Ocorrências",
+    rodape: str = "TEXTURA · análise de corpus",
+    max_n: int | None = None,
+    cores: list | None = None,
+):
+    """Barras horizontais emparelhadas (frequência vs dispersão documental)."""
+    aplicar_estilo()
+    if not rotulos:
+        return
+    pares, extra = _pares_barras_agrupadas(
+        rotulos, valores_a, valores_b, cores, max_n)
+    if extra:
+        subtitulo = f"{subtitulo} · {extra}".strip(" ·")
+    valores_a = [p[0] for p in pares]
+    valores_b = [p[1] for p in pares]
+    rotulos = [p[2] for p in pares]
+    cores = [p[3] for p in pares]
+    n = len(rotulos)
+    alt = max(3.5, min(28.0, 0.38 * n + 1.6))
+    fig, ax = plt.subplots(figsize=(8.5, alt))
+    y = np.arange(n)
+    ordem = np.argsort(np.asarray(valores_a, dtype=float))
+    labs = [rotulos[i] for i in ordem]
+    va = np.asarray(valores_a, dtype=float)[ordem]
+    vb = np.asarray(valores_b, dtype=float)[ordem]
+    cores_ord = [cores[i] for i in ordem]
+    cores_b = [_clarear_hex(c) for c in cores_ord]
+    h = 0.36
+    ax.barh(y - h / 2, va, height=h, color=cores_ord, edgecolor="none",
+            label=nome_a, zorder=3)
+    ax.barh(y + h / 2, vb, height=h, color=cores_b, edgecolor="none",
+            label=nome_b, zorder=3)
+    ax.set_yticks(y)
+    ax.set_yticklabels(labs)
+    ax.set_xlabel(xlabel)
+    ax.xaxis.set_major_locator(mticker.MaxNLocator(integer=True, nbins=6))
+    ax.grid(axis="x", zorder=0)
+    ax.set_axisbelow(True)
+    ax.set_ylim(-0.7, n - 0.3)
+    xmax = float(max(va.max() if len(va) else 1, vb.max() if len(vb) else 1, 1))
+    ax.set_xlim(0, xmax * 1.18)
+    ax.legend(loc="lower right", frameon=True, fancybox=False,
+              edgecolor=RULE, facecolor=PANEL, framealpha=0.95)
     _acabar(fig, ax, destino, titulo=titulo, subtitulo=subtitulo, rodape=rodape)
 
 
@@ -506,38 +784,51 @@ def nuvem_palavras(frequencias: dict, destino: Path, *,
                    titulo: str = "Nuvem de formas casadas",
                    subtitulo: str = "Tamanho proporcional à frequência",
                    rodape: str = "TEXTURA · análise de corpus",
-                   max_words: int = 80):
+                   max_words: int | None = None,
+                   random_state: int = 20260725,
+                   cores_por_palavra: dict | None = None):
     """Nuvem de palavras a partir de {forma: contagem}."""
     if not frequencias:
         return
+    n_orig = len(frequencias)
+    cap = max_words if max_words is not None else n_orig
+    if max_words is not None and max_words < n_orig:
+        extra = f"showing {max_words} of {n_orig} forms; word cap = {max_words}"
+        subtitulo = f"{subtitulo} · {extra}".strip(" ·")
     try:
         from wordcloud import WordCloud
     except ImportError:
         # fallback mínimo sem a biblioteca
         aplicar_estilo()
-        top = sorted(frequencias.items(), key=lambda kv: -kv[1])[:20]
+        top_n = cap if max_words is not None else min(20, n_orig)
+        top = sorted(frequencias.items(), key=lambda kv: -kv[1])[:top_n]
+        if max_words is None and n_orig > 20:
+            extra = f"showing 20 of {n_orig} forms; fallback cap = 20"
+            subtitulo = f"{subtitulo} · {extra}".strip(" ·")
         fig, ax = plt.subplots(figsize=(6.4, 3.2))
         labs, vals = zip(*top) if top else ([], [])
         ax.barh(list(labs)[::-1], list(vals)[::-1], color=ACCENT)
-        _acabar(fig, ax, destino, titulo=titulo + " (fallback)", rodape=rodape)
+        _acabar(fig, ax, destino, titulo=titulo + " (fallback)",
+                subtitulo=subtitulo, rodape=rodape)
         return
 
     aplicar_estilo()
-    def _cor_nuvem(*_args, **_kwargs):
-        # tons escuros (legibilidade); evita sage claro sobre fundo claro
-        import random
-        pal = ["#1F3D36", "#2F5D50", "#3A536B", "#5A4634", "#2A4A42", "#4A3A2A"]
-        return random.choice(pal)
+
+    def _cor_nuvem(word, *args, **kwargs):
+        if cores_por_palavra and word in cores_por_palavra:
+            return cores_por_palavra[word]
+        return cor_canonical(word)
 
     wc = WordCloud(
         width=1200, height=560,
         background_color=PAPER,
         prefer_horizontal=0.78,
-        max_words=max_words,
+        max_words=max(cap, 1),
         relative_scaling=0.45,
         min_font_size=12,
         max_font_size=96,
         collocations=False,
+        random_state=random_state,
         color_func=_cor_nuvem,
     ).generate_from_frequencies(frequencias)
 
@@ -606,7 +897,7 @@ def barras_freq(freq: dict, destino: Path, *, titulo: str = "Frequencia"):
 
 
 def pares_forma_obra(df, *, col_forma="matched_form", col_obra="doc_id",
-                     max_pares: int = 80):
+                     max_pares: int | None = None):
     """Lista (forma, obra, peso) a partir da concordancia nuclear."""
     import pandas as pd
     d = df.copy()
@@ -621,17 +912,26 @@ def pares_forma_obra(df, *, col_forma="matched_form", col_obra="doc_id",
         return []
     g = (d.groupby([col_forma, col_obra]).size()
          .reset_index(name="peso")
-         .sort_values("peso", ascending=False)
-         .head(max_pares))
+         .sort_values("peso", ascending=False))
+    if max_pares is not None:
+        g = g.head(max_pares)
     return list(g.itertuples(index=False, name=None))
 
 
-def pares_termo_rel_pol(df, *, max_pares: int = 120):
+def pares_termo_rel_pol(df, *, max_pares: int | None = None):
     """Fluxo termo -> relacao -> polaridade (pares consecutivos)."""
     cols = ("canonical_term", "relacao_sintactica", "polaridade")
     if any(c not in df.columns for c in cols):
         return []
-    d = df.dropna(subset=list(cols)).copy()
+    d = df.copy()
+    for c in cols:
+        s = d[c]
+        vazio = s.isna() | s.astype(str).str.strip().eq("") | (
+            s.astype(str).str.strip().str.lower().isin({"nan", "none", "nat"}))
+        if c == "polaridade":
+            d.loc[vazio, c] = "não adjudicada"
+        else:
+            d.loc[vazio, c] = "não adjudicado"
     out = []
     g1 = (d.groupby(["canonical_term", "relacao_sintactica"]).size()
           .reset_index(name="peso"))
@@ -642,10 +942,13 @@ def pares_termo_rel_pol(df, *, max_pares: int = 120):
     for r in g2.itertuples(index=False):
         out.append((str(r.relacao_sintactica), str(r.polaridade), int(r.peso)))
     out.sort(key=lambda t: -t[2])
-    return out[:max_pares]
+    if max_pares is not None:
+        return out[:max_pares]
+    return out
 
 
-def sankey_html(ligacoes, destino: Path, *, titulo: str = "Sankey"):
+def sankey_html(ligacoes, destino: Path, *, titulo: str = "Sankey",
+                subtitulo: str = ""):
     """Exporta Sankey interactivo (Plotly) e tenta PNG via kaleido."""
     destino = Path(destino)
     destino.parent.mkdir(parents=True, exist_ok=True)
@@ -679,7 +982,10 @@ def sankey_html(ligacoes, destino: Path, *, titulo: str = "Sankey"):
         node=dict(label=nos, pad=12, thickness=14),
         link=dict(source=src, target=tgt, value=val),
     )])
-    fig.update_layout(title_text=titulo, font_size=11, height=560)
+    titulo_html = titulo
+    if subtitulo:
+        titulo_html = f"{titulo}<br><sup>{subtitulo}</sup>"
+    fig.update_layout(title_text=titulo_html, font_size=11, height=560)
     fig.write_html(str(destino), include_plotlyjs="cdn")
     try:
         fig.write_image(str(destino.with_suffix(".png")))

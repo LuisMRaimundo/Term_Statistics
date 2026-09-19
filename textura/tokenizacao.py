@@ -5,11 +5,29 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 
 from textura.config import (
     ABREVIATURAS, COPULAS, GRADUACAO, MODALIDADE, NEGACAO, NOS,
     RE_FIM_FRASE, RE_HIFEN_QUEBRA, RE_TOKEN,
 )
+
+# Ligaduras que o NFD não decompõe (FR/DE). O resto dos diacríticos
+# (áéíóúãõñç…) cai com a categoria Mn.
+_LIGATURAS = str.maketrans({
+    "æ": "ae", "Æ": "ae", "œ": "oe", "Œ": "oe", "ß": "ss",
+})
+
+
+def sem_diacriticos(texto: str) -> str:
+    """Dobra PT/FR/ES/DE para casar léxico acentuado com matriz ASCII.
+
+    ``estátic*`` casa ``estatica`` e ``estática``; não casa ``static``
+    (radical diferente). A forma original do token mantém-se na saída.
+    """
+    s = unicodedata.normalize(
+        "NFD", (texto or "").translate(_LIGATURAS).casefold())
+    return "".join(ch for ch in s if unicodedata.category(ch) != "Mn")
 
 
 def normaliza(texto: str) -> str:
@@ -68,7 +86,7 @@ def _rx_palavra(p: str) -> re.Pattern:
     """
     esq = p.startswith("*")
     dir_ = p.endswith("*")
-    nucleo = re.escape(p.strip("*"))
+    nucleo = re.escape(sem_diacriticos(p.strip("*")))
     if esq and dir_:
         star = r"[\w\-]{0,20}"
         return re.compile("^" + star + nucleo + star + "$")
@@ -95,14 +113,16 @@ def _casa_em(tokens, j, seq) -> int:
     if j + len(seq) > len(tokens):
         return 0
     for k, rx in enumerate(seq):
-        if not rx.match(tokens[j + k][0]):
+        if not rx.match(sem_diacriticos(tokens[j + k][0])):
             return 0
     return len(seq)
 
 
 def indices_no(tokens, nos_validos: set[str]) -> list[int]:
     """Índices de todas as ocorrências do nó no contexto tokenizado."""
-    return [i for i, (w, _) in enumerate(tokens) if w in nos_validos]
+    nos_fold = {sem_diacriticos(n) for n in nos_validos}
+    return [i for i, (w, _) in enumerate(tokens)
+            if sem_diacriticos(w) in nos_fold]
 
 
 def melhor_par_tokens(tokens, idxs_no: list[int], idx_termo: int,

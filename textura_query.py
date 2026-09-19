@@ -25,6 +25,7 @@ import re
 from dataclasses import dataclass, field
 
 from textura.lexico import ABREVIATURAS, COPULAS
+from textura.tokenizacao import sem_diacriticos
 
 RE_TOKEN = re.compile(r"[A-Za-zÀ-ÖØ-öø-ÿ][A-Za-zÀ-ÖØ-öø-ÿ'’]*")
 RE_HIFEN = re.compile(r"(\w)-\s+(\w)")
@@ -207,7 +208,11 @@ _RE_COLADO = re.compile(
 
 
 def _wildcard_para_regex(padrao: str) -> re.Pattern:
-    """Converte um padrão com * e ? num regex ancorado à palavra."""
+    """Converte um padrão com * e ? num regex ancorado à palavra.
+
+    Diacríticos são dobrados (``estátic*`` ≡ ``estatic*``) para PT/FR/ES.
+    """
+    padrao = sem_diacriticos(padrao)
     partes = []
     for ch in padrao:
         if ch == "*":
@@ -239,7 +244,7 @@ def forma_casa_padrao(forma: str, padrao: str) -> bool:
     if len(palavras_p) != len(palavras_f):
         return False
     return all(
-        _wildcard_para_regex(p).match(f)
+        _wildcard_para_regex(p).match(sem_diacriticos(f))
         for p, f in zip(palavras_p, palavras_f)
     )
 
@@ -496,7 +501,8 @@ class ConsultaBooleana:
         L, n = len(rxs), len(formas)
         hits = []
         for j in range(n - L + 1):
-            if all(rxs[k].match(formas[j + k]) for k in range(L)):
+            if all(rxs[k].match(sem_diacriticos(formas[j + k]))
+                   for k in range(L)):
                 forma = " ".join(formas[j:j + L])
                 if token_parece_colado(forma.replace(" ", "")):
                     continue

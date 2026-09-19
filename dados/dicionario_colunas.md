@@ -67,6 +67,7 @@ Etiquetas exactas:
 - `atributiva_coordenada`
 - `atributiva_via_conj`
 - `genitiva_por_complemento`
+- `nucleo_nao_resolvido`
 
 Prefixos (seguidos de detalhe após `:`):
 

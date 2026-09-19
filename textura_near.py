@@ -9,8 +9,8 @@ Public and test-facing names are re-exported here so ``import textura_near as tn
 keeps working unchanged.
 
 Uso:
-    python textura_near.py --xlsx CAMINHO.xlsx --near 4 --lingua en
-    python textura_near.py --xlsx CAMINHO.xlsx --near 4 --limite 20000
+    python textura_near.py --xlsx CAMINHO.xlsx
+    python textura_near.py --xlsx CAMINHO.xlsx --lingua pt --near 8
 """
 
 from __future__ import annotations
@@ -70,6 +70,7 @@ from textura.relacoes import (
     _token_em,
     anota_com_heuristica,
     anota_com_spacy,
+    anota_com_spacy_misto,
     relacao_dependencia,
 )
 
@@ -82,6 +83,7 @@ from textura.lexico import (
 # --- language registry (Phase 3) -----------------------------------------
 from textura.linguas import (
     CODIGOS as LINGUAS_CODIGOS,
+    LINGUA_OMISSAO,
     REGISTO as LINGUAS,
     obter as lingua_obter,
     resolver_execucao,
@@ -191,6 +193,7 @@ __all__ = [
     "agregar_ocorrencias",
     "anota_com_heuristica",
     "anota_com_spacy",
+    "anota_com_spacy_misto",
     "anota_polaridade_linear",
     "anota_sintaxe",
     "atribuir_match_ids",
@@ -213,6 +216,7 @@ __all__ = [
     "indice_frase",
     "indices_no",
     "juilland_d",
+    "LINGUA_OMISSAO",
     "lingua_obter",
     "main",
     "medidas_associacao",

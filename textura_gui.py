@@ -70,7 +70,7 @@ except Exception:  # noqa: BLE001
         return Path(".") / "legendas_defeito.json"
 
 EXEMPLOS = [
-    "music* NEAR/4 texture*",
+    "music* NEAR/8 texture*",
     "(uniform* OR constant*) AND NOT varied*",
     "dense* OR densit*",
     "texture* AND (orchestr* OR string*)",
@@ -79,7 +79,7 @@ EXEMPLOS = [
 
 AJUDA = (
     "1) Pesquisar → Excel   2) Rever   3) Analisar Excel…   "
-    "4) Apêndice DOCX… (fase 3)   ·   AND OR NOR NOT NEAR/4 * ?"
+    "4) Apêndice DOCX… (fase 3)   ·   AND OR NOR NOT NEAR/8 * ?"
 )
 
 
@@ -102,6 +102,7 @@ class App(tk.Tk):
         self.v_near_extra = tk.BooleanVar(value=False)
         self.v_mesma_frase = tk.BooleanVar(value=True)
         self.v_sintaxe = tk.BooleanVar(value=True)
+        self.v_lingua = tk.StringVar(value="todas")
         self.v_folha = tk.StringVar(value="Neighbor Contexts")
         # Omissão: todas as nucleares (nao passa --relacao).
         # Restringir e opcional e COMPOE-SE com nuclear=True (nunca o substitui).
@@ -192,6 +193,17 @@ class App(tk.Tk):
             text="Exigir que um termo defina/caracterize o outro "
                  "(atributivo, predicativo, «of/as/with», etc.)"
         ).pack(anchor="w", pady=(2, 0))
+        ling = ttk.Frame(filt)
+        ling.pack(anchor="w", pady=(6, 0))
+        ttk.Label(ling, text="Língua do nó (NEAR):").pack(side="left")
+        ttk.Combobox(
+            ling, textvariable=self.v_lingua, width=8, state="readonly",
+            values=("todas", "en", "pt", "fr", "de"),
+        ).pack(side="left", padx=(6, 8))
+        ttk.Label(
+            ling, style="Hint.TLabel",
+            text="todas = texture + textura + … (matriz mista)",
+        ).pack(side="left")
         ttk.Label(
             filt, style="Hint.TLabel", wraplength=740,
             text="Duplicados da coluna O (contexto) são sempre removidos "
@@ -573,6 +585,8 @@ class App(tk.Tk):
             cmd += ["--sem-sintaxe"]
         if self.v_near_extra.get():
             cmd += ["--extrair-near"]
+        lingua = (self.v_lingua.get() or "todas").strip().lower()
+        cmd += ["--lingua", lingua]
 
         self._log("\n" + "-" * 60)
         self._log(" ".join(f'"{a}"' if " " in a else a for a in cmd))

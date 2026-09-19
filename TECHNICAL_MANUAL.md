@@ -2,6 +2,8 @@
 
 **Corpus pipeline for NEAR co-occurrence mining, human adjudication, association statistics, and concordance appendices**
 
+Manual de uso em português (explanação simples + técnica, tutorial, exemplos): [`MANUAL_TECNICO.md`](MANUAL_TECNICO.md).
+
 *Version aligned with schema near ≥ 2 · Suitable for rendering in [StackEdit](https://stackedit.io) (Markdown + LaTeX)*
 
 ---
@@ -683,9 +685,9 @@ logDice rescales to a familiar collocational range (Rychlý). Compare terms **wi
 |---|---|
 | `--xlsx` | Matrix path |
 | `--termos` | Adjudicated field file |
-| `--near` | Window radius (tokens) |
+| `--near` | Window radius (tokens; default **8**) |
 | `--banda` | Outer band limit |
-| `--lingua` | `en` / `pt` / `fr` / `de` / `todas` |
+| `--lingua` | `en` / `pt` / `fr` / `de` / `todas` (default **`todas`**) |
 | `--sintaxe` | `spacy` / `heuristica` |
 | `--col-no` `--col-ctx` `--col-src` | Column numbers (defaults 6, 15, 12) |
 | `--saida` | Output `*_near.xlsx` |
@@ -703,6 +705,31 @@ logDice rescales to a familiar collocational range (Rychlý). Compare terms **wi
 | `--nulo-polaridade` | `banda` / `lexico` |
 | `--relacao` | Optional subset of relations |
 | `--estrito` | Fail if revision checklist reports errors |
+| `--plano-a-priori` | JSON/YAML locks `desduplicacao` / polarity null / relations (plan wins) |
+| `--kappa-cego` | Second-reviewer Excel/JSON; Cohen's κ on `hit_key` → sheet `16_Kappa` |
+| `--lexico` | Adjudicated terms (`etiqueta / familia = patterns`) |
+
+### `textura_freq.py`
+
+Filterable reuse of the Phase-2 `_g_freq_token` report (`N_hits` + `n_documentos` by `canonical_term` and by noun-family). Charts are built by the existing `textura_plots` helpers, not reimplemented. Phase 2 also embeds both native charts in `6_Graficos_barras` and `6_Graficos_familias` (editable table + chart).
+
+```bash
+python textura_freq.py --xlsx Uniform_V1_V2_V3_fundido.xlsx --nuclear true
+python textura_freq.py --xlsx ... --nuclear false --termo clot --forma cloth
+```
+
+| Flag | Role |
+|---|---|
+| `--xlsx` | Adjudicated workbook. Loads `8_Concordancia_Hits` after syncing it from `8_Concordancia` and applying `revisto_por_humano` |
+| `--folha` | Kept for CLI compatibility; the base is always Hits after that reconciliation |
+| `--nuclear` | `true` / `false` / `ambos` |
+| `--termo` / `--forma` | Repeatable `canonical_term` / `matched_form` filters |
+| `--saida` | Output folder (default `./saida_freq`) |
+| `--etiqueta` | Query label in the subtitle and a per-search sub-folder |
+| `--lexico` | Optional `etiqueta / familia = patterns` file |
+| `--so-leitura` | Read `8_Concordancia` only; do not overwrite the Hits mirror |
+
+Also emitted from `textura_search.py --com-graficos` into `<saida>/freq/`.
 
 ### `textura_doctor.py`
 
@@ -817,10 +844,11 @@ a parse and break golden assertions without any intentional code change.
    update the wheel URLs in `.github/workflows/ci.yml`, and record the change
    in the commit message / changelog. Dissertation counts that depend on the
    old model must be re-audited.
-4. Language is chosen at **run level** (`--lingua`). Mode `todas` unions NOS
-   paradigms but still classifies with EN model/prepositions — the CLI logs
-   this limitation explicitly. Dissertation FR/PT counts must use
-   `--lingua fr` / `--lingua pt`, not `todas`.
+4. Language is chosen at **run level** (`--lingua`; default **`todas`**).
+   Mode `todas` unions NOS paradigms but still classifies with EN
+   model/prepositions — the CLI logs this limitation explicitly.
+   Dissertation FR/PT counts must use `--lingua fr` / `--lingua pt`,
+   not `todas`. EN-only goldens pass `--lingua en`.
 
 ### Path→domain configuration
 
@@ -851,6 +879,7 @@ Conflicting root vs canonical files raise rather than choosing silently.
 | `textura_near.py` | NEAR mining, IDs, fusion, association primitives, diversity, BH |
 | `textura_analise.py` | Phase-2 workbook, tests, frequencies, graphs hook |
 | `textura_search.py` | Boolean search / Results Excel |
+| `textura_freq.py` | Filterable `_g_freq_token` report (N_hits + n_documentos) |
 | `textura_apendice.py` | DOCX projection, excerpt cleanup, PDF pages |
 | `textura_lexico.py` | Field loading, polarity, axes, `doc_id` |
 | `textura_stats.py` | LR, BF, permutations, logistic, CA, profiles |

@@ -13,6 +13,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from openpyxl import load_workbook
+from openpyxl.cell.rich_text import CellRichText, TextBlock
+from openpyxl.cell.text import InlineFont
 from openpyxl.styles import PatternFill
 from openpyxl.utils import get_column_letter
 
@@ -30,12 +32,18 @@ from textura.duplicados import (
 )
 from textura.exportacao import reordenar_colunas_hits
 from textura.lexico import caminho_dominios_path, dominio_janela
-from textura.linguas import CODIGOS as LINGUAS_CODIGOS, resolver_execucao
-from textura.relacoes import anota_com_heuristica, anota_com_spacy
+from textura.linguas import (
+    CODIGOS as LINGUAS_CODIGOS,
+    LINGUA_OMISSAO,
+    resolver_execucao,
+)
+from textura.relacoes import (
+    anota_com_heuristica, anota_com_spacy, anota_com_spacy_misto,
+)
 from textura.revisao import etiqueta_prefixada, juntar_etiquetas
 from textura.tokenizacao import (
     _Consulta, anota_sintaxe, compila_campo, emparelha_contexto, fronteiras_frase, indices_no, normaliza,
-    procura_near, tokeniza,
+    procura_near, sem_diacriticos, tokeniza,
 )
 
 # conta_tokens lives in estatistica — import under real name below
@@ -44,6 +52,46 @@ from textura.estatistica import (
     POLO_VARIABILIDADE,
     conta_tokens,
 )
+
+NEAR_OMISSAO = 8
+
+_COR_SEPARADOR_REVISAO = "C9A227"
+_FONTE_TERMO = InlineFont(b=True, color="9B2C00")
+_FONTE_SNIPPET = InlineFont(color="1C2429")
+
+
+def _intervalo_termo(texto: str, forma: str, off) -> tuple[int, int] | None:
+    """Posição de ``forma`` em ``texto`` (off_termo, senão procura)."""
+    if not texto or not forma:
+        return None
+    n = len(forma)
+    try:
+        start = int(off)
+    except (TypeError, ValueError):
+        start = -1
+    if 0 <= start <= len(texto) - n and texto[start:start + n].lower() == forma.lower():
+        return start, start + n
+    idx = texto.lower().find(forma.lower())
+    if idx < 0:
+        return None
+    return idx, idx + n
+
+
+def _contexto_com_termo_destacado(texto, forma, off):
+    """Rich text: termo do campo a negrito/terracota no snippet."""
+    s = "" if texto is None else str(texto)
+    f = "" if forma is None else str(forma).strip()
+    span = _intervalo_termo(s, f, off)
+    if span is None:
+        return s
+    a, b = span
+    partes = []
+    if a:
+        partes.append(TextBlock(_FONTE_SNIPPET, s[:a]))
+    partes.append(TextBlock(_FONTE_TERMO, s[a:b]))
+    if b < len(s):
+        partes.append(TextBlock(_FONTE_SNIPPET, s[b:]))
+    return CellRichText(*partes)
 
 
 def _configurar_consola() -> None:
@@ -61,12 +109,14 @@ def main() -> int:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--xlsx", required=True, type=Path)
     ap.add_argument("--folha", default="Neighbor Contexts")
-    ap.add_argument("--near", type=int, default=4)
+    ap.add_argument("--near", type=int, default=NEAR_OMISSAO,
+                    help=f"raio NEAR em tokens (omissão: {NEAR_OMISSAO})")
     ap.add_argument(
-        "--lingua", default="en",
+        "--lingua", default=LINGUA_OMISSAO,
         choices=sorted(set(LINGUAS_CODIGOS) | set(NOS)) + ["todas"],
-        help="língua da execução (paradigmas NOS + modelo spaCy do registo); "
-             "'todas' une NOS mas mantém modelo/preps ao nível en",
+        help="lingua da execucao (paradigmas NOS + modelo spaCy); "
+             f"omissao: {LINGUA_OMISSAO} (une NOS; modelo/preps EN). "
+             "Use en/pt/fr/de para uma so lingua.",
     )
     ap.add_argument("--limite", type=int, default=None,
                     help="processar apenas as N primeiras linhas (teste)")
@@ -196,7 +246,8 @@ def main() -> int:
     nos_validos = (set().union(*NOS.values()) if args.lingua == "todas"
                    else NOS[args.lingua])
     df["NODE"] = df["NODE"].astype(str).str.lower()
-    df = df[df["NODE"].isin(nos_validos)]
+    nos_fold = {sem_diacriticos(n) for n in nos_validos}
+    df = df[df["NODE"].map(sem_diacriticos).isin(nos_fold)]
     print(f"      {total_bruto} linhas -> {len(df)} após filtro de língua "
           f"'{args.lingua}' e contexto não vazio", flush=True)
 
@@ -357,21 +408,22 @@ def main() -> int:
 
     if args.sintaxe == "spacy":
         print("[2b/5] Analise de dependencias (spaCy) ...", flush=True)
-        # Modelo em falta: EN permanece obrigatório; outras línguas degradam
-        # para heurística com aviso (sem inventar língua por linha).
-        obrig = exec_ling.cfg.codigo == "en"
-        res = anota_com_spacy(
-            res, args.modelo,
-            obrigatorio=obrig,
-            preps_genitivo=exec_ling.cfg.preps_genitivo,
-            preps_associativa=exec_ling.cfg.preps_associativa,
-        )
-        if res["fonte_classificacao"].eq("heuristica").all() and not obrig:
-            print(
-                f"AVISO: modelo '{args.modelo}' indisponível — "
-                f"classificação heurística para lingua={exec_ling.cfg.codigo}.",
-                flush=True,
+        if args.lingua == "todas":
+            res = anota_com_spacy_misto(res)
+        else:
+            obrig = exec_ling.cfg.codigo == "en"
+            res = anota_com_spacy(
+                res, args.modelo,
+                obrigatorio=obrig,
+                preps_genitivo=exec_ling.cfg.preps_genitivo,
+                preps_associativa=exec_ling.cfg.preps_associativa,
             )
+            if res["fonte_classificacao"].eq("heuristica").all() and not obrig:
+                print(
+                    f"AVISO: modelo '{args.modelo}' indisponível — "
+                    f"classificação heurística para lingua={exec_ling.cfg.codigo}.",
+                    flush=True,
+                )
     else:
         print("[2b/5] Classificacao heuristica ...", flush=True)
         res = anota_com_heuristica(res)
@@ -649,6 +701,18 @@ def main() -> int:
                 for r in range(2, wsc.max_row + 1):
                     if _linha_por_rever(r):
                         wsc.cell(row=r, column=j).fill = amarelo
+        wsc.sheet_properties.tabColor = _COR_SEPARADOR_REVISAO
+        wb.active = wsc
+        if "contexto" in cab and "matched_form" in cab:
+            j_ctx = cab.index("contexto") + 1
+            j_form = cab.index("matched_form") + 1
+            j_off = (cab.index("off_termo") + 1) if "off_termo" in cab else None
+            for r in range(2, wsc.max_row + 1):
+                wsc.cell(row=r, column=j_ctx).value = _contexto_com_termo_destacado(
+                    wsc.cell(row=r, column=j_ctx).value,
+                    wsc.cell(row=r, column=j_form).value,
+                    wsc.cell(row=r, column=j_off).value if j_off else None,
+                )
         wb.save(args.saida)
     except Exception as exc:
         print(f"      AVISO: validacao Excel nao aplicada ({exc})", flush=True)

@@ -6,17 +6,22 @@ A língua da execução é escolhida ao nível da corrida (``--lingua``), não p
 detecção automática nem por linha da matriz. O modelo spaCy, as preposições
 genitivas e o estado de validação vêm deste registo.
 
-EN é o âncora: os valores por omissão reproduzem o comportamento pré-Phase-3
-(byte-identical no golden EN). PT e FR têm golden fino; DE permanece
+A omissão da corrida é ``todas`` (união dos paradigmas NOS). EN continua
+o âncora de modelo spaCy e preposições quando ``--lingua todas``. Os
+goldens EN/PT/FR fixam ``--lingua`` explicitamente. DE permanece
 «não validado» (ausente do corpus adjudicado).
 """
 
 from __future__ import annotations
 
+LINGUA_OMISSAO = "todas"
+
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Mapping
 
 from textura.lexico import COPULAS, NEGACAO, NOS
+from textura.tokenizacao import sem_diacriticos
 
 
 # Preposições usadas por ``_tem_complemento_genitivo`` antes da Phase 3
@@ -129,6 +134,32 @@ CODIGOS = tuple(REGISTO.keys())
 DEFAULT = REGISTO["en"]
 
 
+@lru_cache(maxsize=1)
+def _nos_dobrados() -> dict[str, frozenset[str]]:
+    return {
+        cod: frozenset(sem_diacriticos(f) for f in forms)
+        for cod, forms in NOS.items()
+    }
+
+
+def lingua_do_no(forma: str) -> str:
+    """Língua do modelo spaCy a partir da forma do nó (não do contexto).
+
+    Formas exclusivas de um paradigma NOS ganham (``textura`` → pt).
+    Formas partilhadas (``texture``, ``textures``, ``textural``) → ``en``.
+    Inventário só FR: ``--lingua fr``.
+    """
+    w = sem_diacriticos(forma)
+    if not w:
+        return "en"
+    donos = [cod for cod, forms in _nos_dobrados().items() if w in forms]
+    if len(donos) == 1:
+        return donos[0]
+    if not donos and w.startswith("textura"):
+        return "pt"
+    return "en"
+
+
 def obter(codigo: str) -> LinguaConfig:
     key = (codigo or "en").strip().lower()
     if key not in REGISTO:
@@ -155,20 +186,21 @@ def resolver_execucao(
 ) -> ExecucaoLinguistica:
     """Mapeia ``--lingua`` / ``--modelo`` → config de uma só língua efectiva.
 
-    ``--lingua todas`` selecciona paradigmas de nó de todas as línguas em NOS,
-    mas o modelo spaCy e as preposições genitivas permanecem os de EN (salvo
-    ``--modelo`` explícito). Não há detecção de língua por linha.
+    ``--lingua todas`` une paradigmas NOS. A classificação spaCy é
+    despachada pela forma do nó (``lingua_do_no``): ``textura*`` → PT,
+    ``texture*`` exclusivos EN → EN; formas partilhadas (``textural``)
+    ficam EN. Não há detecção de língua pelo texto da janela.
     """
-    lingua = (lingua or "en").strip().lower()
+    lingua = (lingua or LINGUA_OMISSAO).strip().lower()
     avisos: list[str] = []
 
     if lingua == "todas":
         cfg = DEFAULT
         avisos.append(
-            "lingua=todas: paradigmas NOS unidos; modelo spaCy e "
-            "preposições genitivas ao nível da execução (en) — "
-            "sem detecção de língua por linha. "
-            "modo todas: janelas não-EN classificadas com modelo/preposições EN."
+            "lingua=todas: paradigmas NOS unidos; spaCy despachado "
+            "pela forma do no (textura*→pt, texture*→en; "
+            "textural/texture partilhados→en). "
+            "sem detecção de língua pelo texto da janela."
         )
     else:
         cfg = obter(lingua)

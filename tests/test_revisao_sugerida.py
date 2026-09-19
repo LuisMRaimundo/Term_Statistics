@@ -56,6 +56,7 @@ class TestRevisaoVocabulario(unittest.TestCase):
                 "genitiva_por_complemento",
                 "atributiva_via_conj",
                 "atributiva_coordenada",
+                "nucleo_nao_resolvido",
             ):
                 for m in re.finditer(re.escape(f'"{tag}"'), text):
                     start = max(0, m.start() - 40)

@@ -17,7 +17,7 @@ co-ocorrências de textura_near.py.
 
 Uso:
     python textura_search.py
-    python textura_search.py --consulta "music* NEAR/4 texture*"
+    python textura_search.py --consulta "music* NEAR/8 texture*"
     python textura_search.py --consulta "uniform* OR constant*" --limite 5000
 """
 
@@ -45,6 +45,7 @@ import textura_lexico as tlex
 import textura_near as tn
 import textura_plots as tplot
 import textura_query as tq
+from textura.linguas import LINGUA_OMISSAO
 
 # ---------------------------------------------------------------------------
 # Folha / saída por omissão — a matriz KWIC NÃO tem default (GUI ou --xlsx)
@@ -71,6 +72,34 @@ def _canonical_de_forma(forma: str, campo_lex: dict[str, list[str]]) -> str:
         if any(tq.forma_casa_padrao(forma, p) for p in pads):
             return etq
     return forma
+
+
+def _quadro_freq_pesquisa(res: pd.DataFrame,
+                          campo_lex: dict[str, list[str]]) -> pd.DataFrame | None:
+    """Adapta Results da pesquisa ao esquema de ``textura_freq``."""
+    if res is None or not len(res):
+        return None
+    needed = {"canonical_term", "matched_form", "nuclear"}
+    if needed.issubset(set(res.columns)):
+        return res
+    if "Match" not in res.columns:
+        return None
+    linhas = []
+    tem_file = "File" in res.columns
+    tem_doc = "Doc" in res.columns
+    for row in res.itertuples(index=False):
+        formas = [p.strip() for p in str(row.Match).split(",") if p.strip()]
+        caminho = str(row.File) if tem_file else ""
+        doc = str(row.Doc) if tem_doc else caminho
+        for forma in formas:
+            linhas.append({
+                "canonical_term": _canonical_de_forma(forma, campo_lex),
+                "matched_form": forma,
+                "caminho_ficheiro": caminho,
+                "doc_id": doc,
+                "nuclear": True,
+            })
+    return pd.DataFrame(linhas) if linhas else None
 
 
 def _relacao_para_analise(hit_rel: str | None, tokens, no_idx: int,
@@ -730,6 +759,21 @@ def pesquisar(xlsx: Path, consulta: str, folha: str = DEFAULT_FOLHA,
             s.column_dimensions[letra].width = 18 if col < 4 else 42
     wb.save(saida)
 
+    if com_graficos:
+        quadro_freq = _quadro_freq_pesquisa(res, campo_lex)
+        if quadro_freq is not None and len(quadro_freq):
+            try:
+                import textura_freq
+                freq_out = textura_freq.gerar(
+                    quadro_freq, saida.parent / "freq",
+                    etiqueta_consulta=consulta)
+                print(
+                    f"      freq token: {freq_out['n_hits']} hits · "
+                    f"{freq_out['n_termos']} termos -> {freq_out['png']}",
+                    flush=True)
+            except Exception as exc:  # noqa: BLE001
+                print(f"      [freq] {exc}", flush=True)
+
     print("\n" + resumo.to_string(index=False))
     print(f"\nConcluido: {saida.resolve()}")
     print(f"Termos:    {termos_path.resolve()}")
@@ -748,7 +792,7 @@ def main() -> int:
                     help="matriz KWIC (.xlsx) — obrigatório, sem default")
     ap.add_argument("--folha", default=DEFAULT_FOLHA)
     ap.add_argument("--consulta", required=True,
-                    help='ex.: "music* NEAR/4 texture*"  ou  '
+                    help='ex.: "music* NEAR/8 texture*"  ou  '
                          '"(uniform* OR constant*) AND NOT varied*"')
     ap.add_argument("--saida", type=Path, default=DEFAULT_SAIDA)
     ap.add_argument("--limite", type=int, default=None)
@@ -776,6 +820,12 @@ def main() -> int:
     ap.add_argument("--termos", type=Path, default=None,
                     help="lista adjudicada (etiqueta = padrao1, padrao2). "
                          "Fecha o léxico de Results/gráficos/NEAR")
+    ap.add_argument(
+        "--lingua", default=LINGUA_OMISSAO,
+        help="passado a textura_near (NOS do no). Omissao: todas "
+             "(a pesquisa ja casa textur* em EN/PT/FR). Use en/pt/fr "
+             "para uma so lingua no NEAR.",
+    )
     args = ap.parse_args()
 
     if not args.xlsx.exists():
@@ -814,7 +864,8 @@ def main() -> int:
                "--termos", str(termos_usar),
                "--col-no", str(args.col_no),
                "--col-ctx", str(args.col_ctx),
-               "--col-src", str(args.col_src)]
+               "--col-src", str(args.col_src),
+               "--lingua", args.lingua]
         if args.com_cabecalho:
             cmd.append("--com-cabecalho")
         if qtmp.near_n:

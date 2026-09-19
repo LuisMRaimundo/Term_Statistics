@@ -13,6 +13,7 @@ from textura.lexico import (
     POLO_ESTABILIDADE as _POLO_E,
     POLO_VARIABILIDADE as _POLO_V,
 )
+from textura.tokenizacao import sem_diacriticos
 
 NODE_PATTERNS = {
     "textur*", "texture*", "textures*", "textural*", "texturally*",
@@ -99,17 +100,18 @@ _PADRAO_PARA_CANONICO: dict[str, str] = {}
 
 def forma_e_no(forma: str) -> bool:
     """True se a forma pertence morfologicamente ao nó textur*."""
-    w = str(forma).lower().strip().strip("*")
+    w = sem_diacriticos(str(forma).strip().strip("*"))
     if not w:
         return False
-    if w in set().union(*NOS.values()):
+    nos_fold = {sem_diacriticos(n) for n in set().union(*NOS.values())}
+    if w in nos_fold:
         return True
     return w.startswith("textur")
 
 
 def parece_padrao_no(s: str) -> bool:
-    s = str(s).strip().lower()
-    if s in NODE_PATTERNS:
+    s = sem_diacriticos(str(s).strip())
+    if s in {sem_diacriticos(p) for p in NODE_PATTERNS}:
         return True
     return forma_e_no(s)
 
@@ -211,7 +213,7 @@ def carregar_termos_ficheiro(caminho) -> dict[str, TermoConfig]:
 def _rx_padrao(p: str) -> re.Pattern:
     esq = p.startswith("*")
     dir_ = p.endswith("*")
-    nucleo = re.escape(p.strip("*"))
+    nucleo = re.escape(sem_diacriticos(p.strip("*")))
     if esq and dir_:
         star = r"[\w\-]{0,20}"
         return re.compile("^" + star + nucleo + star + "$")
@@ -223,8 +225,11 @@ def _rx_padrao(p: str) -> re.Pattern:
 
 
 def canonical_de_forma(forma: str, campo: dict[str, list[str]]) -> str:
-    """Etiqueta canónica cujo padrão casa a forma — nunca um padrão do nó."""
-    f = str(forma).lower()
+    """Etiqueta canónica cujo padrão casa a forma — nunca um padrão do nó.
+
+    O casamento dobra diacríticos (``estátic*`` ≡ ``estaticas``).
+    """
+    f = sem_diacriticos(forma)
     for etq, pads in campo.items():
         if parece_padrao_no(etq):
             continue
@@ -233,7 +238,7 @@ def canonical_de_forma(forma: str, campo: dict[str, list[str]]) -> str:
             if len(partes) == 1:
                 if _rx_padrao(partes[0]).match(f):
                     return etq
-            elif f == p.lower():
+            elif f == sem_diacriticos(p):
                 return etq
     return stem_de_padrao(forma)
 
